@@ -11,6 +11,7 @@ create table if not exists public.events (
   status      text not null default 'todo' check (status in ('todo', 'doing', 'done')),
   notes       text not null default '',
   checklist   jsonb not null default '[]'::jsonb,
+  attachments jsonb not null default '[]'::jsonb,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
@@ -52,3 +53,5 @@ begin
   alter publication supabase_realtime add table public.events;
 exception when duplicate_object then null;
 end $$;
+
+-- Prílohy (PDF): spusti aj súbor supabase-prilohy.sql

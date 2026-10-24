@@ -178,6 +178,18 @@ header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; b
 .danger { border: 1px solid var(--line); background: transparent; color: var(--danger); padding: 7px 12px; border-radius: 10px; font-weight: 500; }
 .danger.armed { background: var(--danger); color: var(--surface); border-color: var(--danger); }
 .err { color: var(--danger); font-size: .85rem; }
+.files { display: flex; flex-direction: column; gap: 6px; }
+.file { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 8px; align-items: center; background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 6px 8px; }
+.file .kind { border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 3px 6px; font-size: .78rem; font-weight: 600; }
+.file .kind[data-k="faktura"] { color: var(--done); }
+.file .kind[data-k="ponuka"] { color: var(--doing); }
+.file .fname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .88rem; }
+.file .fname small { color: var(--muted); font-family: var(--f-mono); font-size: .72rem; margin-left: 6px; }
+.file .open { border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 3px 9px; font-size: .8rem; font-weight: 600; color: var(--accent); }
+.file .x { border: 0; background: transparent; color: var(--muted); font-size: 1.1rem; padding: 0 4px; }
+.file-add { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.file-add .hint { color: var(--muted); font-size: .8rem; }
+@media (max-width: 620px) { .file { grid-template-columns: minmax(0, 1fr) auto auto; } .file .kind { grid-column: 1 / -1; justify-self: start; } }
 
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 10px; font-size: .88rem; z-index: 30; box-shadow: var(--shadow); }
 
@@ -313,19 +325,61 @@ main { padding-bottom: 40px; }
       title: ev.title, date: ev.date, time: ev.time || "", end: ev.end || "",
       status: ev.status, notes: ev.notes || "",
       checklist: (ev.checklist || []).filter(c => c.text.trim()).map(c => ({ id: c.id, text: c.text.trim(), done: !!c.done })),
+      attachments: (ev.attachments || []).map(a => ({ path: a.path, name: a.name, size: a.size || 0, kind: a.kind || "ine", added: a.added || Date.now() })),
       updated: Date.now(),
     };
   }
   const newId = () => (crypto.randomUUID ? crypto.randomUUID() :
     "10000000-1000-4000-8000-100000000000".replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)));
-  const toRow = (id, d) => ({
-    id, title: d.title, event_date: d.date, start_time: d.time || null, end_time: d.end || null,
-    status: d.status, notes: d.notes, checklist: d.checklist,
-  });
+  const toRow = (id, d, withFiles) => {
+    const r = {
+      id, title: d.title, event_date: d.date, start_time: d.time || null, end_time: d.end || null,
+      status: d.status, notes: d.notes, checklist: d.checklist,
+    };
+    // send attachments only when there are some (or they changed), so the diary keeps working before the attachments SQL is run
+    if (withFiles || (d.attachments && d.attachments.length)) r.attachments = d.attachments || [];
+    return r;
+  };
   const fromRow = r => ({
     id: r.id, title: r.title, date: r.event_date, time: (r.start_time || "").slice(0, 5), end: (r.end_time || "").slice(0, 5),
     status: r.status || "todo", notes: r.notes || "", checklist: Array.isArray(r.checklist) ? r.checklist : [],
+    attachments: Array.isArray(r.attachments) ? r.attachments : [],
   });
+
+  // ---------- Attachments (Supabase Storage) ----------
+  const BUCKET = "prilohy";
+  const KINDS = { ponuka: "Cenová ponuka", faktura: "Faktúra", ine: "Iné" };
+  const MAX_MB = 20;
+  const fmtSize = b => b >= 1048576 ? (b / 1048576).toFixed(1).replace(".", ",") + " MB" : Math.max(1, Math.round(b / 1024)) + " kB";
+  const guessKind = n => /fakt|invoice|fa[_ -]?\d/i.test(n) ? "faktura" : /ponuk|cenov|offer|quot|nabid/i.test(n) ? "ponuka" : "ine";
+  function storageMsg(e) {
+    const m = ((e && (e.message || e.error)) || "") + "";
+    if (/bucket not found/i.test(m)) return "Úložisko na prílohy ešte neexistuje. V Supabase spusti súbor supabase-prilohy.sql (pozri README).";
+    if (/row-level|security|unauthori[sz]ed|403/i.test(m)) return "Úložisko súbor odmietlo. V Supabase spusti súbor supabase-prilohy.sql (pozri README).";
+    if (/mime|type/i.test(m)) return "Dá sa priložiť iba PDF súbor.";
+    if (/size|large|exceed|413/i.test(m)) return "Súbor je príliš veľký (max " + MAX_MB + " MB).";
+    if (/fetch|network/i.test(m)) return "Si offline. Súbor sa nepodarilo nahrať.";
+    return "Súbor sa nepodarilo nahrať: " + (m || "neznáma chyba");
+  }
+  async function uploadPdf(evId, file) {
+    if (file.type !== "application/pdf" && !/\.pdf$/i.test(file.name)) throw "Dá sa priložiť iba PDF súbor.";
+    if (file.size > MAX_MB * 1048576) throw "Súbor „" + file.name + "“ má viac ako " + MAX_MB + " MB.";
+    const safe = (file.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9._-]+/g, "_").slice(-80)) || "subor.pdf";
+    const path = uid + "/" + evId + "/" + Date.now() + "-" + safe;
+    const { error } = await sb.storage.from(BUCKET).upload(path, file, { contentType: "application/pdf", upsert: false });
+    if (error) throw storageMsg(error);
+    return { path, name: file.name, size: file.size, kind: guessKind(file.name), added: Date.now() };
+  }
+  async function removeFiles(paths) {
+    if (!sb || !paths.length) return;
+    try { await sb.storage.from(BUCKET).remove(paths); } catch (e) {}
+  }
+  async function openFile(a) {
+    const w = window.open("", "_blank");
+    const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(a.path, 600);
+    if (error || !data) { if (w) w.close(); toast(/not found/i.test((error && error.message) || "") ? "Súbor sa v úložisku nenašiel." : storageMsg(error)); return; }
+    if (w) w.location.href = data.signedUrl; else location.href = data.signedUrl;
+  }
   function cacheEvents() {
     if (!uid) return;
     try { localStorage.setItem("diar.cache." + uid, JSON.stringify([...state.events.values()])); } catch (e) {}
@@ -338,18 +392,21 @@ main { padding-bottom: 40px; }
       state.events.set(nid, { id: nid, ...data }); saveLocal(); render(); return;
     }
     const nid = id || newId();
-    const { error } = await sb.from("events").upsert(toRow(nid, data));
+    const { error } = await sb.from("events").upsert(toRow(nid, data, !!ev.attTouched));
     if (error) throw friendly(error);
     state.events.set(nid, { id: nid, ...data }); cacheEvents(); render();
   }
   async function removeEvent(id) {
     if (!sb || !uid) { state.events.delete(id); saveLocal(); render(); return; }
+    const files = ((state.events.get(id) || {}).attachments || []).map(a => a.path);
     const { error } = await sb.from("events").delete().eq("id", id);
     if (error) throw friendly(error);
+    removeFiles(files);
     state.events.delete(id); cacheEvents(); render();
   }
   function friendly(e) {
     const msg = (e && (e.message || "")) + "";
+    if (/attachments/i.test(msg)) return "Databáza ešte nepozná prílohy. V Supabase spusti súbor supabase-prilohy.sql (pozri README).";
     if (e && e.code === "42501" || /row-level security/i.test(msg)) return "Databáza zápis odmietla. Skontroluj, či si spustil SQL z kroku 2 v návode.";
     if (e && e.code === "42P01" || /relation .* does not exist/i.test(msg)) return "V databáze chýba tabuľka. Spusti SQL z kroku 2 v návode.";
     if (/JWT|expired/i.test(msg)) return "Prihlásenie vypršalo. Obnov stránku a prihlás sa znova.";
@@ -375,6 +432,7 @@ main { padding-bottom: 40px; }
         opts.pill !== false ? h("span", { class: "pill", dataset: { s: ev.status }, text: STATUS[ev.status] }) : null,
         total ? h("span", { class: "prog", text: "☑ " + doneN + "/" + total }) : null,
         ev.notes ? h("span", { text: "poznámka" }) : null,
+        ev.attachments && ev.attachments.length ? h("span", { class: "prog", text: "PDF " + ev.attachments.length }) : null,
         opts.move ? opts.move : null,
       ),
     );
@@ -557,6 +615,11 @@ main { padding-bottom: 40px; }
       title: "", date: dateStr || state.selected || todayIso(), time: "", end: "", status: "todo", notes: "", checklist: [],
     };
     draft.checklist = draft.checklist || [];
+    draft.attachments = draft.attachments || [];
+    const evId = id || newId();
+    const pendingUploads = [];   // uploaded in this dialog; removed again if the dialog is cancelled
+    const pendingRemovals = [];  // already saved files the person removed; deleted after saving
+    let busyUploads = 0;
     const root = document.getElementById("modal-root");
     const err = h("p", { class: "err", hidden: true });
 
@@ -598,11 +661,53 @@ main { padding-bottom: 40px; }
     };
     newCheck.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addCheck(); } });
 
+    // attachments
+    const canFiles = !!(sb && uid);
+    const files = h("div", { class: "files" });
+    const fileErr = h("p", { class: "err", hidden: true });
+    const picker = h("input", { id: "f-files", type: "file", accept: "application/pdf,.pdf", multiple: true, hidden: true });
+    const addFileBtn = h("button", { class: "ghost", type: "button", disabled: !canFiles, onclick: () => picker.click(), text: "+ Priložiť PDF" });
+    const fileHint = h("span", { class: "hint", text: canFiles ? "Cenové ponuky, faktúry… max " + MAX_MB + " MB" : "Prílohy sa dajú pridávať po prihlásení." });
+    function drawFiles() {
+      files.replaceChildren(...draft.attachments.map(a => {
+        const kind = h("select", { class: "kind", "aria-label": "Druh prílohy", dataset: { k: a.kind } },
+          Object.keys(KINDS).map(k => h("option", { value: k, text: KINDS[k] })));
+        kind.value = a.kind;
+        kind.addEventListener("change", () => { a.kind = kind.value; kind.dataset.k = a.kind; draft.attTouched = true; });
+        return h("div", { class: "file" }, kind,
+          h("span", { class: "fname", title: a.name }, a.name, h("small", { text: fmtSize(a.size || 0) })),
+          h("button", { class: "open", type: "button", onclick: () => openFile(a), text: "Otvoriť" }),
+          h("button", { class: "x", type: "button", "aria-label": "Odstrániť prílohu " + a.name, onclick: () => {
+            draft.attachments = draft.attachments.filter(x => x !== a); draft.attTouched = true;
+            const i = pendingUploads.indexOf(a.path);
+            if (i >= 0) { pendingUploads.splice(i, 1); removeFiles([a.path]); } else pendingRemovals.push(a.path);
+            drawFiles();
+          }, text: "×" }));
+      }));
+      if (!draft.attachments.length) files.append(h("p", { class: "empty", text: "Žiadne prílohy." }));
+    }
+    drawFiles();
+    picker.addEventListener("change", async () => {
+      const list = [...picker.files]; picker.value = "";
+      if (!list.length) return;
+      fileErr.hidden = true; busyUploads++;
+      addFileBtn.disabled = true; saveBtn.disabled = true;
+      for (const f of list) {
+        addFileBtn.textContent = "Nahrávam " + f.name + "…";
+        try {
+          const a = await uploadPdf(evId, f);
+          pendingUploads.push(a.path); draft.attachments.push(a); draft.attTouched = true; drawFiles();
+        } catch (msg) { fileErr.textContent = msg; fileErr.hidden = false; }
+      }
+      busyUploads--;
+      addFileBtn.textContent = "+ Priložiť PDF"; addFileBtn.disabled = false; saveBtn.disabled = false;
+    });
+
     const saveBtn = h("button", { class: "primary", type: "submit", text: src ? "Uložiť zmeny" : "Pridať akciu" });
     let armed = false;
     const delBtn = src ? h("button", { class: "danger", type: "button", text: "Vymazať", onclick: async () => {
       if (!armed) { armed = true; delBtn.classList.add("armed"); delBtn.textContent = "Naozaj vymazať?"; return; }
-      try { await removeEvent(id); close(); toast("Akcia vymazaná"); } catch (msg) { err.textContent = msg; err.hidden = false; }
+      try { await removeEvent(id); removeFiles(pendingUploads.splice(0)); close(true); toast("Akcia vymazaná"); } catch (msg) { err.textContent = msg; err.hidden = false; }
     } }) : null;
 
     const form = h("form", { class: "modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "m-title" },
@@ -617,6 +722,8 @@ main { padding-bottom: 40px; }
       h("div", { class: "field" }, h("label", { for: "f-notes", text: "Poznámky" }), notes),
       h("div", { class: "field" }, h("span", { class: "lbl", text: "Checklist" }), checks,
         h("div", { class: "add-check" }, newCheck, h("button", { class: "ghost", type: "button", onclick: addCheck, text: "Pridať" }))),
+      h("div", { class: "field" }, h("span", { class: "lbl", text: "Prílohy (PDF)" }), files,
+        h("div", { class: "file-add" }, addFileBtn, fileHint, picker), fileErr),
       err,
       h("div", { class: "modal-foot" }, delBtn, h("span", { class: "spacer" }),
         h("button", { class: "ghost", type: "button", onclick: () => close(), text: "Zrušiť" }), saveBtn),
@@ -628,13 +735,16 @@ main { padding-bottom: 40px; }
       if (!draft.title) { err.textContent = "Zadaj názov akcie."; err.hidden = false; title.focus(); return; }
       if (!draft.date) { err.textContent = "Vyber dátum."; err.hidden = false; return; }
       if (draft.end && !draft.time) draft.end = "";
+      if (busyUploads) { err.textContent = "Počkaj, kým sa dokončí nahrávanie príloh."; err.hidden = false; return; }
       saveBtn.disabled = true; saveBtn.textContent = "Ukladám…";
       try {
-        await saveEvent(src ? id : null, draft);
+        await saveEvent(evId, draft);
+        pendingUploads.length = 0;
+        removeFiles(pendingRemovals.splice(0));
         state.selected = draft.date;
         const d = parse(draft.date);
         if (state.view === "month" && (d.getMonth() !== state.cursor.getMonth() || d.getFullYear() !== state.cursor.getFullYear())) state.cursor = d;
-        close(); toast(src ? "Uložené" : "Akcia pridaná");
+        close(true); toast(src ? "Uložené" : "Akcia pridaná");
       } catch (msg) {
         err.textContent = msg; err.hidden = false; saveBtn.disabled = false; saveBtn.textContent = src ? "Uložiť zmeny" : "Pridať akciu";
       }
@@ -642,7 +752,11 @@ main { padding-bottom: 40px; }
 
     const overlay = h("div", { class: "overlay", onclick: e => { if (e.target === overlay) close(); } }, form);
     function onKey(e) { if (e.key === "Escape") close(); }
-    function close() { document.removeEventListener("keydown", onKey); root.replaceChildren(); render(); }
+    function close(saved) {
+      if (!saved && busyUploads) { err.textContent = "Počkaj, kým sa dokončí nahrávanie príloh."; err.hidden = false; return; }
+      if (!saved && pendingUploads.length) removeFiles(pendingUploads.splice(0));  // cancelled: drop files uploaded in this dialog
+      document.removeEventListener("keydown", onKey); root.replaceChildren(); render();
+    }
     document.addEventListener("keydown", onKey);
     root.replaceChildren(overlay);
     if (!src) setTimeout(() => title.focus(), 30);
