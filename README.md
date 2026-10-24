@@ -10,7 +10,7 @@ Súkromný kalendár s mesačným a týždenným pohľadom, kanban nástenkou (*
 
 ## 1. Supabase (databáza)
 
-1. V projekte otvor **SQL Editor** → **New query**, vlož celý obsah súboru **supabase.sql** a stlač **Run**. Má sa ukázať *Success*. To isté potom urob so súbormi **supabase-prilohy.sql** (prílohy PDF) a **supabase-viacdnove.sql** (akcie cez viac dní).
+1. V projekte otvor **SQL Editor** → **New query**, vlož celý obsah súboru **supabase.sql** a stlač **Run**. Má sa ukázať *Success*. To isté potom urob so súbormi **supabase-prilohy.sql** (prílohy PDF) **supabase-viacdnove.sql** (akcie cez viac dní) a **supabase-mzdy.sql** (pracovné miesta a mzdy).
 2. **Vytvor si prihlasovací účet:** **Authentication** → **Users** → **Add user** → **Create new user**. Zadaj e-mail a heslo a zaškrtni **Auto Confirm User**.
 3. **Zakáž registráciu cudzím:** **Authentication** → *Sign In / Providers* → vypni **Allow new users to sign up**.
 4. **Údaje na pripojenie:** **Project Settings** → **API Keys** → verejný kľúč **publishable** (`sb_publishable_…`), nie *secret* / *service_role*.
@@ -46,6 +46,7 @@ Zmeny: otvor súbor na GitHube → ceruzka → uprav → **Commit changes**. Str
 | „Nesprávny e-mail alebo heslo“ | skontroluj účet v Authentication → Users |
 | „Úložisko na prílohy ešte neexistuje“ alebo „Databáza ešte nepozná prílohy“ | spusti supabase-prilohy.sql |
 | „Databáza ešte nepozná viacdňové akcie“ | spusti supabase-viacdnove.sql |
+| „Databáza ešte nepozná pracovné miesta“ | spusti supabase-mzdy.sql |
 | „chýba tabuľka pre kalendár“ | spusti supabase-kalendar.sql |
 | Kalendár Apple hlási chybu alebo „Vyskúšať adresu“ ukáže *Missing authorization header* | vo funkcii **swift-service** vypni **Verify JWT** |
 | „Vyskúšať adresu“ ukáže *Function not found* | funkcia ešte nie je nasadená (Kalendár Apple, krok 2) |
@@ -56,6 +57,15 @@ Zmeny: otvor súbor na GitHube → ceruzka → uprav → **Commit changes**. Str
 - V detaile akcie → **+ Priložiť PDF**. Pri každom súbore vyberieš druh: *Cenová ponuka*, *Faktúra* alebo *Iné*.
 - Súbory sú v súkromnom úložisku Supabase (*Storage → prilohy*), každý vidí iba svoje. **Otvoriť** vytvorí dočasný odkaz platný 10 minút.
 - Max 20 MB na súbor, bezplatný plán Supabase má spolu 1 GB.
+
+## Pracovné miesta a mzdy
+
+- **Pracovné miesto** je odberateľ s dohodnutou sadzbou: **hodinová** (€/hod), **denná** (€/deň) alebo **úkolová** (€/úlohu).
+- V detaile akcie ho vyberieš pod názvom, nové pridáš priamo tam (*+ Nové pracovné miesto…*) alebo v pohľade **Mzdy**.
+- Množstvo sa doplní samo: hodiny z času od – do, dni z dátumov, pri úkolovej 1 úloha. Dá sa prepísať, napr. po odpočítaní prestávky.
+- Sadzba sa uloží pri akcii, takže neskoršia zmena sadzby nezmení staré akcie. Pri akcii sa dá upraviť aj ručne.
+- Pohľad **Mzdy** (`#mzdy`): suma za mesiac, súčty podľa pracovných miest a zoznam akcií. Akcia patrí do mesiaca, v ktorom začína. Voľba *Len hotové* započíta iba akcie v stave Hotovo.
+- Pracovné miesto, s ktorým už nespolupracuješ, **archivuj**: zmizne z výberu, staré akcie a sumy ostanú.
 
 ## Kalendár Apple (iCloud)
 

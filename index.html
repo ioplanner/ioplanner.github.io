@@ -159,6 +159,42 @@ header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; b
 .field input, .field select, .field textarea { width: 100%; border: 1px solid var(--line); background: var(--surface-2); border-radius: 9px; padding: 9px 10px; min-width: 0; }
 .field textarea { min-height: 90px; resize: vertical; }
 .row { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 10px; }
+.pay-box { display: flex; flex-direction: column; gap: 8px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-top: 4px; }
+.pay-grid { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 8px; }
+.money-in { display: flex; align-items: center; gap: 6px; }
+.money-in input { flex: 1; min-width: 0; }
+.per { color: var(--muted); font-size: .8rem; white-space: nowrap; }
+.pay-out { font-size: .9rem; font-variant-numeric: tabular-nums; }
+.pay-out strong { font-family: var(--f-display); font-size: 1.05rem; }
+.new-wp { margin-top: 4px; }
+.wp-form { display: flex; flex-direction: column; gap: 8px; background: var(--surface-2); border: 1px dashed var(--accent); border-radius: 10px; padding: 10px; }
+.wp-form input, .wp-form select { width: 100%; border: 1px solid var(--line); background: var(--surface); border-radius: 9px; padding: 8px 10px; min-width: 0; }
+.wp-rate { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.wp-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.wp-tag { color: var(--accent); font-weight: 600; }
+.pay-sum { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.pay-total { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 2px; }
+.pay-total strong { font-family: var(--f-display); font-size: 2.2rem; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.warn { margin: 0; padding: 8px 12px; border-radius: 9px; background: var(--surface); border: 1px solid var(--doing); color: var(--ink); font-size: .88rem; }
+.sec { font-family: var(--f-display); font-size: 1.05rem; margin: 18px 0 8px; }
+.tbl-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.tbl { width: 100%; border-collapse: collapse; font-size: .9rem; font-variant-numeric: tabular-nums; }
+.tbl th { text-align: left; font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; padding: 10px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tbl td { padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.tbl tbody tr:last-child td { border-bottom: 0; }
+.tbl tfoot td { border-top: 2px solid var(--line); border-bottom: 0; font-weight: 700; }
+.tbl .n { text-align: right; white-space: nowrap; }
+.tbl .mono { font-family: var(--f-mono); font-size: .76rem; white-space: nowrap; }
+.tbl tr.click { cursor: pointer; }
+.tbl tr.click:hover td { background: var(--surface-2); }
+.tbl .pill { margin-left: 6px; }
+.wp-manage { display: flex; flex-direction: column; gap: 10px; }
+.wp-list { display: flex; flex-direction: column; gap: 8px; }
+.wp-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.wp-row.archived .wp-main strong { color: var(--muted); }
+.wp-main { display: flex; flex-direction: column; min-width: 0; }
+.wp-main strong { overflow-wrap: anywhere; }
+@media (max-width: 620px) { .pay-grid { grid-template-columns: 1fr 1fr; } .pay-grid .field:first-child { grid-column: 1 / -1; } .wp-row { grid-template-columns: minmax(0, 1fr) auto; } .wp-row .wp-main { grid-column: 1 / -1; } }
 .when { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
 .when .hint { grid-column: 1 / -1; }
 .pair { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 6px; }
@@ -237,6 +273,7 @@ main { padding-bottom: 40px; }
       <button id="v-month" data-v="month">Mesiac</button>
       <button id="v-week" data-v="week">Týždeň</button>
       <button id="v-board" data-v="board">Nástenka</button>
+      <button id="v-pay" data-v="pay">Mzdy</button>
     </div>
     <button class="primary" id="new-btn">+ Nová akcia</button>
     <button class="ghost" id="cal-btn" hidden>Kalendár Apple</button>
@@ -304,10 +341,12 @@ main { padding-bottom: 40px; }
     cursor: new Date(),
     selected: todayIso(),
     boardScope: "upcoming",
+    payScope: "all",
+    workplaces: new Map(),
     events: new Map(),
   };
   try { const v = localStorage.getItem("diar.view"); if (v) state.view = v; } catch (e) {}
-  const hashMap = { mesiac: "month", tyzden: "week", nastenka: "board" };
+  const hashMap = { mesiac: "month", tyzden: "week", nastenka: "board", mzdy: "pay" };
   if (hashMap[location.hash.slice(1)]) state.view = hashMap[location.hash.slice(1)];
 
   let sb = null;         // Supabase client
@@ -315,6 +354,10 @@ main { padding-bottom: 40px; }
   let readOnly = false;
   let localMode = false; // no Supabase: keep events in this browser only
   state.gate = false;
+  function saveLocalWp() {
+    if (!localMode) return;
+    try { localStorage.setItem("diar.workplaces", JSON.stringify([...state.workplaces.values()])); } catch (e) {}
+  }
   function saveLocal() {
     if (!localMode) return;
     try { localStorage.setItem("diar.events", JSON.stringify([...state.events.values()])); } catch (e) {}
@@ -365,6 +408,10 @@ main { padding-bottom: 40px; }
     return {
       title: ev.title, date: ev.date, time: ev.time || "", end: ev.end || "",
       endDate: ev.endDate && ev.endDate !== ev.date ? ev.endDate : "",
+      work: ev.work && ev.work.type ? {
+        wp: ev.work.wp || "", name: ev.work.name || "", type: ev.work.type,
+        rate: Number(ev.work.rate) || 0, qty: ev.work.qty === null || ev.work.qty === "" || ev.work.qty === undefined ? null : Number(ev.work.qty),
+      } : null,
       status: ev.status, notes: ev.notes || "",
       checklist: (ev.checklist || []).filter(c => c.text.trim()).map(c => ({ id: c.id, text: c.text.trim(), done: !!c.done })),
       attachments: (ev.attachments || []).map(a => ({ path: a.path, name: a.name, size: a.size || 0, kind: a.kind || "ine", added: a.added || Date.now() })),
@@ -380,6 +427,7 @@ main { padding-bottom: 40px; }
     };
     // end date only when used, so single-day events save even before the multi-day SQL is run
     if (withEnd || d.endDate) r.end_date = d.endDate || null;
+    if (d.work || d._hadWork) r.work = d.work || null;
     // send attachments only when there are some (or they changed), so the diary keeps working before the attachments SQL is run
     if (withFiles || (d.attachments && d.attachments.length)) r.attachments = d.attachments || [];
     return r;
@@ -389,7 +437,78 @@ main { padding-bottom: 40px; }
     status: r.status || "todo", notes: r.notes || "", checklist: Array.isArray(r.checklist) ? r.checklist : [],
     attachments: Array.isArray(r.attachments) ? r.attachments : [],
     endDate: r.end_date && r.end_date !== r.event_date ? r.end_date : "",
+    work: r.work && r.work.type ? r.work : null,
   });
+
+  // ---------- Workplaces & pay ----------
+  const RATE = {
+    hour: { label: "Hodinová", unit: "hod", per: "€ / hod", qtyLabel: "Hodiny" },
+    day:  { label: "Denná",    unit: "dní", per: "€ / deň", qtyLabel: "Dni" },
+    task: { label: "Úkolová",  unit: "ks",  per: "€ / úlohu", qtyLabel: "Počet úloh" },
+  };
+  const moneyFmt = new Intl.NumberFormat("sk-SK", { style: "currency", currency: "EUR" });
+  const numFmt = new Intl.NumberFormat("sk-SK", { maximumFractionDigits: 2 });
+  const money = n => moneyFmt.format(n || 0);
+  const num = n => numFmt.format(n || 0);
+  const toNum = v => { const x = parseFloat(String(v ?? "").replace(/\s/g, "").replace(",", ".")); return isFinite(x) ? x : null; };
+  let wpMissing = false;
+  const activeWps = () => [...state.workplaces.values()].filter(w => !w.archived).sort((a, b) => a.name.localeCompare(b.name, "sk"));
+  // quantity that follows from the event's own dates and times
+  function autoQty(ev, type) {
+    if (type === "day") return Math.round((parse(lastDay(ev)) - parse(ev.date)) / 864e5) + 1;
+    if (type === "task") return 1;
+    if (ev.time && ev.end) {
+      let hrs = (new Date(lastDay(ev) + "T" + ev.end) - new Date(ev.date + "T" + ev.time)) / 36e5;
+      if (hrs <= 0) hrs += 24;
+      return Math.round(hrs * 100) / 100;
+    }
+    return null;
+  }
+  function payOf(ev) {
+    const w = ev.work;
+    if (!w || !RATE[w.type]) return null;
+    const auto = autoQty(ev, w.type);
+    const qty = w.qty !== null && w.qty !== undefined && w.qty !== "" ? Number(w.qty) : auto;
+    const rate = Number(w.rate) || 0;
+    return { qty, auto, rate, unit: RATE[w.type].unit, amount: qty == null ? null : Math.round(qty * rate * 100) / 100 };
+  }
+  async function saveWorkplace(w) {
+    const row = { id: w.id || newId(), name: w.name.trim(), rate_type: w.rate_type, rate: Number(w.rate) || 0, note: w.note || "", archived: !!w.archived };
+    if (!sb || !uid) { state.workplaces.set(row.id, row); saveLocalWp(); return row; }
+    const { error } = await sb.from("workplaces").upsert(row);
+    if (error) throw friendly(error);
+    wpMissing = false;
+    state.workplaces.set(row.id, row);
+    return row;
+  }
+  function wpForm(initial, onDone, onCancel) {
+    const w = initial ? { ...initial } : { name: "", rate_type: "hour", rate: "" };
+    const key = (w.id || "new").slice(0, 8);
+    const name = h("input", { id: "wp-name-" + key, type: "text", value: w.name, placeholder: "Názov odberateľa, napr. Stavby Novák s.r.o.", maxlength: "120", "aria-label": "Názov pracovného miesta" });
+    const type = h("select", { id: "wp-type-" + key, "aria-label": "Druh sadzby" }, Object.keys(RATE).map(k => h("option", { value: k, text: RATE[k].label + " sadzba" })));
+    type.value = w.rate_type;
+    const rate = h("input", { id: "wp-rate-" + key, type: "text", inputmode: "decimal", value: w.rate === "" ? "" : (Number(w.rate) || 0).toFixed(2).replace(".", ","), placeholder: "0,00", "aria-label": "Sadzba v eurách" });
+    const per = h("span", { class: "per", text: RATE[w.rate_type].per });
+    type.addEventListener("change", () => { per.textContent = RATE[type.value].per; });
+    const err = h("p", { class: "err", hidden: true });
+    const save = h("button", { class: "primary", type: "button", text: initial ? "Uložiť" : "Pridať pracovné miesto" });
+    save.addEventListener("click", async () => {
+      const r = toNum(rate.value);
+      if (!name.value.trim()) { err.textContent = "Zadaj názov pracovného miesta."; err.hidden = false; name.focus(); return; }
+      if (r === null || r < 0) { err.textContent = "Zadaj sadzbu v eurách, napr. 12,50."; err.hidden = false; rate.focus(); return; }
+      save.disabled = true;
+      try { const row = await saveWorkplace({ ...w, name: name.value, rate_type: type.value, rate: r }); onDone(row); }
+      catch (msg) { err.textContent = msg; err.hidden = false; save.disabled = false; }
+    });
+    const box = h("div", { class: "wp-form" },
+      name,
+      h("div", { class: "wp-rate" }, type, h("div", { class: "money-in" }, rate, per)),
+      err,
+      h("div", { class: "wp-actions" }, onCancel ? h("button", { class: "ghost", type: "button", onclick: onCancel, text: "Zrušiť" }) : null, save),
+    );
+    setTimeout(() => { if (!initial) name.focus(); }, 30);
+    return box;
+  }
 
   // ---------- Attachments (Supabase Storage) ----------
   const BUCKET = "prilohy";
@@ -437,7 +556,7 @@ main { padding-bottom: 40px; }
       state.events.set(nid, { id: nid, ...data }); saveLocal(); render(); return;
     }
     const nid = id || newId();
-    const { error } = await sb.from("events").upsert(toRow(nid, data, !!ev.attTouched, !!ev.hadEnd));
+    const { error } = await sb.from("events").upsert(toRow(nid, { ...data, _hadWork: !!ev.hadWork }, !!ev.attTouched, !!ev.hadEnd));
     if (error) throw friendly(error);
     state.events.set(nid, { id: nid, ...data }); cacheEvents(); render();
   }
@@ -451,6 +570,7 @@ main { padding-bottom: 40px; }
   }
   function friendly(e) {
     const msg = (e && (e.message || "")) + "";
+    if (/workplaces|'work' column/i.test(msg)) return "Databáza ešte nepozná pracovné miesta. V Supabase spusti súbor supabase-mzdy.sql (pozri README).";
     if (/end_date/i.test(msg)) return "Databáza ešte nepozná viacdňové akcie. V Supabase spusti súbor supabase-viacdnove.sql (pozri README).";
     if (/attachments/i.test(msg)) return "Databáza ešte nepozná prílohy. V Supabase spusti súbor supabase-prilohy.sql (pozri README).";
     if (e && e.code === "42501" || /row-level security/i.test(msg)) return "Databáza zápis odmietla. Skontroluj, či si spustil SQL z kroku 2 v návode.";
@@ -477,6 +597,7 @@ main { padding-bottom: 40px; }
         opts.showDate ? h("span", { class: "prog", text: rangeText(ev) }) : null,
         opts.pill !== false ? h("span", { class: "pill", dataset: { s: ev.status }, text: STATUS[ev.status] }) : null,
         total ? h("span", { class: "prog", text: "☑ " + doneN + "/" + total }) : null,
+        ev.work ? h("span", { class: "wp-tag", text: ev.work.name + (payOf(ev) && payOf(ev).amount != null ? " · " + money(payOf(ev).amount) : "") }) : null,
         ev.notes ? h("span", { text: "poznámka" }) : null,
         ev.attachments && ev.attachments.length ? h("span", { class: "prog", text: "PDF " + ev.attachments.length }) : null,
         opts.move ? opts.move : null,
@@ -650,7 +771,108 @@ main { padding-bottom: 40px; }
     ["prev", "next", "today-btn"].forEach(id => document.getElementById(id).hidden = !nav);
     if (state.view === "week") renderWeek();
     else if (state.view === "board") renderBoard();
+    else if (state.view === "pay") renderPay();
     else renderMonth();
+  }
+
+  // ---------- Pay view ----------
+  let wpEditing = null; // id of the workplace being edited in the list
+  function renderPay() {
+    const c = state.cursor, y = c.getFullYear(), m = c.getMonth();
+    periodEl.replaceChildren("Mzdy · " + MONTHS[m] + " ", h("span", { text: y }));
+    const from = iso(new Date(y, m, 1)), to = iso(new Date(y, m + 1, 0));
+    let evs = sortEvents([...state.events.values()].filter(e => e.work && e.date >= from && e.date <= to));
+    if (state.payScope === "done") evs = evs.filter(e => e.status === "done");
+    const rows = evs.map(e => ({ e, p: payOf(e) }));
+    const total = rows.reduce((a, r) => a + (r.p && r.p.amount != null ? r.p.amount : 0), 0);
+    const missing = rows.filter(r => !r.p || r.p.amount == null);
+
+    const tools = h("div", { class: "board-tools" },
+      h("span", { text: "Započítať:" }),
+      h("div", { class: "seg", role: "group", "aria-label": "Ktoré akcie započítať" },
+        h("button", { id: "pay-all", "aria-pressed": String(state.payScope === "all"), onclick: () => { state.payScope = "all"; render(); }, text: "Všetky akcie" }),
+        h("button", { id: "pay-done", "aria-pressed": String(state.payScope === "done"), onclick: () => { state.payScope = "done"; render(); }, text: "Len hotové" }),
+      ),
+      h("span", { text: "Akcia patrí do mesiaca, v ktorom začína." }),
+    );
+
+    // by workplace
+    const groups = new Map();
+    rows.forEach(({ e, p }) => {
+      const k = e.work.wp || ("name:" + e.work.name);
+      const g = groups.get(k) || { name: e.work.name, count: 0, qty: {}, amount: 0 };
+      g.count++;
+      if (p && p.qty != null) g.qty[p.unit] = (g.qty[p.unit] || 0) + p.qty;
+      if (p && p.amount != null) g.amount += p.amount;
+      groups.set(k, g);
+    });
+    const gList = [...groups.values()].sort((a, b) => b.amount - a.amount);
+
+    const summary = h("section", { class: "pay-sum" },
+      h("div", { class: "pay-total" },
+        h("span", { class: "lbl", text: state.payScope === "done" ? "Spolu za hotové akcie" : "Spolu za mesiac" }),
+        h("strong", { text: money(total) }),
+        h("span", { class: "hint", text: rows.length + " " + (rows.length === 1 ? "akcia" : rows.length >= 2 && rows.length <= 4 ? "akcie" : "akcií") + " s pracovným miestom" }),
+      ),
+      missing.length ? h("p", { class: "warn", text: "Pri " + missing.length + " " + (missing.length === 1 ? "akcii" : "akciách") + " chýbajú hodiny (zadaj čas od – do alebo počet hodín), suma sa nezapočítala." }) : null,
+    );
+
+    const byWp = gList.length ? h("div", { class: "tbl-wrap" }, h("table", { class: "tbl" },
+      h("thead", {}, h("tr", {}, h("th", { text: "Pracovné miesto" }), h("th", { class: "n", text: "Akcie" }), h("th", { class: "n", text: "Množstvo" }), h("th", { class: "n", text: "Suma" }))),
+      h("tbody", {}, gList.map(g => h("tr", {},
+        h("td", { text: g.name }),
+        h("td", { class: "n", text: g.count }),
+        h("td", { class: "n", text: Object.keys(g.qty).map(u => num(g.qty[u]) + " " + u).join(", ") || "–" }),
+        h("td", { class: "n", text: money(g.amount) }),
+      ))),
+      h("tfoot", {}, h("tr", {}, h("td", { text: "Spolu" }), h("td", { class: "n", text: rows.length }), h("td", {}), h("td", { class: "n", text: money(total) }))),
+    )) : h("p", { class: "empty", text: "V tomto mesiaci nie sú žiadne akcie s pracovným miestom. Pracovné miesto vyberieš v detaile akcie pod názvom." });
+
+    const detail = rows.length ? h("div", { class: "tbl-wrap" }, h("table", { class: "tbl" },
+      h("thead", {}, h("tr", {}, h("th", { text: "Dátum" }), h("th", { text: "Akcia" }), h("th", { text: "Pracovné miesto" }), h("th", { class: "n", text: "Výpočet" }), h("th", { class: "n", text: "Suma" }))),
+      h("tbody", {}, rows.map(({ e, p }) => h("tr", { class: "click", onclick: () => openEditor(e.id) },
+        h("td", { class: "mono", text: rangeText(e) }),
+        h("td", {}, e.title, e.status === "done" ? h("span", { class: "pill", dataset: { s: "done" }, text: "Hotovo" }) : null),
+        h("td", { text: e.work.name }),
+        h("td", { class: "n", text: p && p.qty != null ? num(p.qty) + " " + p.unit + " × " + money(p.rate) : "chýba množstvo" }),
+        h("td", { class: "n", text: p && p.amount != null ? money(p.amount) : "–" }),
+      ))),
+    )) : null;
+
+    // workplace management
+    const list = h("div", { class: "wp-list" });
+    const all = [...state.workplaces.values()].sort((a, b) => (a.archived - b.archived) || a.name.localeCompare(b.name, "sk"));
+    all.forEach(w => {
+      if (wpEditing === w.id) {
+        list.append(wpForm(w, () => { wpEditing = null; render(); toast("Pracovné miesto uložené"); }, () => { wpEditing = null; render(); }));
+        return;
+      }
+      list.append(h("div", { class: "wp-row" + (w.archived ? " archived" : "") },
+        h("div", { class: "wp-main" }, h("strong", { text: w.name }),
+          h("span", { class: "hint", text: RATE[w.rate_type].label + " sadzba · " + money(w.rate) + " " + RATE[w.rate_type].per.replace("€ ", "") + (w.archived ? " · archivované" : "") })),
+        h("button", { class: "ghost", type: "button", onclick: () => { wpEditing = w.id; render(); }, text: "Upraviť" }),
+        h("button", { class: "ghost", type: "button", onclick: async () => {
+          try { await saveWorkplace({ ...w, archived: !w.archived }); render(); toast(w.archived ? "Pracovné miesto obnovené" : "Pracovné miesto archivované"); }
+          catch (msg) { toast(msg); }
+        }, text: w.archived ? "Obnoviť" : "Archivovať" }),
+      ));
+    });
+    if (!all.length) list.append(h("p", { class: "empty", text: "Zatiaľ nemáš žiadne pracovné miesto." }));
+    const addBox = wpEditing === "new"
+      ? wpForm(null, () => { wpEditing = null; render(); toast("Pracovné miesto pridané"); }, () => { wpEditing = null; render(); })
+      : h("button", { class: "ghost", type: "button", onclick: () => { wpEditing = "new"; render(); }, text: "+ Nové pracovné miesto" });
+
+    viewEl.replaceChildren(...[
+      tools,
+      wpMissing ? h("p", { class: "notice", text: "Databáza ešte nepozná pracovné miesta. V Supabase spusti súbor supabase-mzdy.sql (pozri README)." }) : null,
+      summary,
+      h("h3", { class: "sec", text: "Podľa pracovného miesta" }), byWp,
+      detail ? h("h3", { class: "sec", text: "Jednotlivé akcie" }) : null, detail,
+      h("section", { class: "agenda wp-manage" },
+        h("div", { class: "agenda-head" }, h("h2", { text: "Pracovné miesta" })),
+        h("p", { class: "hint", text: "Odberatelia s dohodnutou sadzbou. Archivované sa už neponúkajú pri nových akciách, staré akcie ostanú." }),
+        list, addBox),
+    ].filter(Boolean));
   }
 
   // ---------- Editor ----------
@@ -676,6 +898,86 @@ main { padding-bottom: 40px; }
     const endDate = h("input", { id: "f-enddate", type: "date", value: draft.endDate || draft.date, "aria-label": "Dátum konca" });
     date.setAttribute("aria-label", "Dátum začiatku"); time.setAttribute("aria-label", "Čas začiatku");
     draft.hadEnd = !!(src && src.endDate);
+    draft.hadWork = !!(src && src.work);
+    draft.work = draft.work ? { ...draft.work } : null;
+
+    // work / pay
+    const wpSel = h("select", { id: "f-wp", "aria-label": "Pracovné miesto" });
+    function fillWp() {
+      const opts = [h("option", { value: "", text: "— bez pracovného miesta —" })];
+      activeWps().forEach(w => opts.push(h("option", { value: w.id, text: w.name })));
+      if (draft.work && draft.work.wp && !activeWps().some(w => w.id === draft.work.wp))
+        opts.push(h("option", { value: draft.work.wp, text: draft.work.name + " (archivované)" }));
+      opts.push(h("option", { value: "__new", text: "+ Nové pracovné miesto…" }));
+      wpSel.replaceChildren(...opts);
+      wpSel.value = draft.work ? draft.work.wp || "" : "";
+    }
+    const payBox = h("div", { class: "pay-box" });
+    const newWpBox = h("div", { class: "new-wp", hidden: true });
+    const payType = h("select", { id: "f-paytype", "aria-label": "Druh sadzby" }, Object.keys(RATE).map(k => h("option", { value: k, text: RATE[k].label })));
+    const payRate = h("input", { id: "f-payrate", type: "text", inputmode: "decimal", placeholder: "0,00", "aria-label": "Sadzba v eurách" });
+    const payPer = h("span", { class: "per" });
+    const payQty = h("input", { id: "f-payqty", type: "text", inputmode: "decimal", "aria-label": "Množstvo" });
+    const payQtyLbl = h("label", { for: "f-payqty" });
+    const payOut = h("div", { class: "pay-out" });
+    function currentEv() {
+      return { date: date.value, endDate: endDate.value, time: time.value, end: end.value, work: draft.work };
+    }
+    function syncWorkFromInputs() {
+      if (!draft.work) return;
+      draft.work.type = payType.value;
+      const r = toNum(payRate.value); draft.work.rate = r === null ? 0 : r;
+      const q = payQty.value.trim() === "" ? null : toNum(payQty.value); draft.work.qty = q;
+    }
+    function drawPay() {
+      payBox.hidden = !draft.work;
+      if (!draft.work) return;
+      syncWorkFromInputs();
+      const ev = currentEv();
+      const auto = autoQty(ev, draft.work.type);
+      payPer.textContent = RATE[draft.work.type].per;
+      payQtyLbl.textContent = RATE[draft.work.type].qtyLabel;
+      payQty.placeholder = auto == null ? "zadaj" : num(auto) + " (z času)";
+      const p = payOf(ev);
+      payOut.replaceChildren(p && p.amount != null
+        ? h("span", {}, num(p.qty) + " " + p.unit + " × " + money(p.rate) + " = ", h("strong", { text: money(p.amount) }))
+        : h("span", { class: "hint", text: draft.work.type === "hour" ? "Zadaj čas od – do alebo počet hodín." : "Zadaj množstvo." }));
+    }
+    function loadPayInputs() {
+      if (!draft.work) return;
+      payType.value = draft.work.type;
+      payRate.value = (Number(draft.work.rate) || 0).toFixed(2).replace(".", ",");
+      payQty.value = draft.work.qty == null ? "" : String(draft.work.qty).replace(".", ",");
+    }
+    function useWorkplace(w) {
+      draft.work = { wp: w.id, name: w.name, type: w.rate_type, rate: Number(w.rate) || 0, qty: null };
+      loadPayInputs(); drawPay();
+    }
+    wpSel.addEventListener("change", () => {
+      if (wpSel.value === "__new") {
+        newWpBox.hidden = false;
+        newWpBox.replaceChildren(wpForm(null, row => {
+          newWpBox.hidden = true; newWpBox.replaceChildren(); useWorkplace(row); fillWp(); toast("Pracovné miesto pridané");
+        }, () => { newWpBox.hidden = true; newWpBox.replaceChildren(); fillWp(); }));
+        return;
+      }
+      newWpBox.hidden = true; newWpBox.replaceChildren();
+      if (!wpSel.value) { draft.work = null; drawPay(); return; }
+      const w = state.workplaces.get(wpSel.value);
+      if (w) useWorkplace(w);
+    });
+    [payType, payRate, payQty].forEach(el => el.addEventListener("input", drawPay));
+    payType.addEventListener("change", drawPay);
+    [date, endDate, time, end].forEach(el => el.addEventListener("change", drawPay));
+    payBox.append(
+      h("div", { class: "pay-grid" },
+        h("div", { class: "field" }, h("label", { for: "f-paytype", text: "Druh sadzby" }), payType),
+        h("div", { class: "field" }, h("label", { for: "f-payrate", text: "Sadzba" }), h("div", { class: "money-in" }, payRate, payPer)),
+        h("div", { class: "field" }, payQtyLbl, payQty),
+      ),
+      payOut,
+    );
+    fillWp(); loadPayInputs(); drawPay();
     // keep the end on or after the start when the start date moves
     let lastStart = date.value;
     date.addEventListener("change", () => {
@@ -768,6 +1070,7 @@ main { padding-bottom: 40px; }
     const form = h("form", { class: "modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "m-title" },
       h("h2", { id: "m-title", text: src ? "Upraviť akciu" : "Nová akcia" }),
       h("div", { class: "field" }, h("label", { for: "f-title", text: "Názov" }), title),
+      h("div", { class: "field" }, h("label", { for: "f-wp", text: "Pracovné miesto" }), wpSel, newWpBox, payBox),
       h("div", { class: "when" },
         h("div", { class: "field" }, h("label", { for: "f-date", text: "Začiatok" }), h("div", { class: "pair" }, date, time)),
         h("div", { class: "field" }, h("label", { for: "f-enddate", text: "Koniec" }), h("div", { class: "pair" }, endDate, end)),
@@ -796,6 +1099,9 @@ main { padding-bottom: 40px; }
         err.textContent = "Koniec musí byť neskôr ako začiatok. Ak akcia končí na druhý deň, zmeň dátum konca."; err.hidden = false; end.focus(); return;
       }
       draft.endDate = endD === draft.date ? "" : endD;
+      syncWorkFromInputs();
+      if (draft.work && toNum(payRate.value) === null) { err.textContent = "Zadaj sadzbu v eurách, napr. 12,50."; err.hidden = false; payRate.focus(); return; }
+      if (draft.work && payQty.value.trim() !== "" && (toNum(payQty.value) === null || toNum(payQty.value) < 0)) { err.textContent = "Množstvo zadaj ako číslo, napr. 7,5."; err.hidden = false; payQty.focus(); return; }
       if (busyUploads) { err.textContent = "Počkaj, kým sa dokončí nahrávanie príloh."; err.hidden = false; return; }
       saveBtn.disabled = true; saveBtn.textContent = "Ukladám…";
       try {
@@ -931,6 +1237,7 @@ main { padding-bottom: 40px; }
     try {
       const saved = JSON.parse(localStorage.getItem("diar.events") || "[]");
       saved.forEach(e => { if (e && e.id && e.title) state.events.set(e.id, e); });
+      JSON.parse(localStorage.getItem("diar.workplaces") || "[]").forEach(w => { if (w && w.id) state.workplaces.set(w.id, w); });
     } catch (e) {}
     syncEl.textContent = "len toto zariadenie";
     notice.textContent = !window.supabase && configured
@@ -965,6 +1272,10 @@ main { padding-bottom: 40px; }
     notice.hidden = true;
     state.events = new Map(data.map(r => [r.id, fromRow(r)]));
     cacheEvents();
+    const wps = await sb.from("workplaces").select("*").order("name");
+    if (wps.error) wpMissing = /workplaces|relation|schema cache/i.test(wps.error.message || "");
+    else { wpMissing = false; state.workplaces = new Map(wps.data.map(w => [w.id, w])); }
+    try { localStorage.setItem("diar.wpcache." + uid, JSON.stringify(wps.data || [])); } catch (e) {}
     syncEl.textContent = "synchronizované";
     if (!modalOpen()) render();
   }
@@ -986,11 +1297,14 @@ main { padding-bottom: 40px; }
     try {
       const cached = JSON.parse(localStorage.getItem("diar.cache." + uid) || "[]");
       state.events = new Map(cached.filter(e => e && e.id).map(e => [e.id, e]));
+      const wc = JSON.parse(localStorage.getItem("diar.wpcache." + uid) || "[]");
+      state.workplaces = new Map(wc.filter(w => w && w.id).map(w => [w.id, w]));
     } catch (e) { state.events = new Map(); }
     render();
     loadAll();
     channel = sb.channel("events-" + uid)
       .on("postgres_changes", { event: "*", schema: "public", table: "events", filter: "user_id=eq." + uid }, scheduleLoad)
+      .on("postgres_changes", { event: "*", schema: "public", table: "workplaces", filter: "user_id=eq." + uid }, scheduleLoad)
       .subscribe();
   }
 
