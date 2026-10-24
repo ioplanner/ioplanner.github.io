@@ -160,7 +160,7 @@ header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; b
 .field textarea { min-height: 90px; resize: vertical; }
 .row { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 10px; }
 .pay-box { display: flex; flex-direction: column; gap: 8px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-top: 4px; }
-.pay-grid { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 8px; }
+.pay-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
 .money-in { display: flex; align-items: center; gap: 6px; }
 .money-in input { flex: 1; min-width: 0; }
 .per { color: var(--muted); font-size: .8rem; white-space: nowrap; }
@@ -410,7 +410,7 @@ main { padding-bottom: 40px; }
       endDate: ev.endDate && ev.endDate !== ev.date ? ev.endDate : "",
       work: ev.work && ev.work.type ? {
         wp: ev.work.wp || "", name: ev.work.name || "", type: ev.work.type,
-        rate: Number(ev.work.rate) || 0, qty: ev.work.qty === null || ev.work.qty === "" || ev.work.qty === undefined ? null : Number(ev.work.qty),
+        rate: ev.work.rate === null || ev.work.rate === undefined || ev.work.rate === "" ? null : Number(ev.work.rate), qty: ev.work.qty === null || ev.work.qty === "" || ev.work.qty === undefined ? null : Number(ev.work.qty),
       } : null,
       status: ev.status, notes: ev.notes || "",
       checklist: (ev.checklist || []).filter(c => c.text.trim()).map(c => ({ id: c.id, text: c.text.trim(), done: !!c.done })),
@@ -444,7 +444,7 @@ main { padding-bottom: 40px; }
   const RATE = {
     hour: { label: "Hodinová", unit: "hod", per: "€ / hod", qtyLabel: "Hodiny" },
     day:  { label: "Denná",    unit: "dní", per: "€ / deň", qtyLabel: "Dni" },
-    task: { label: "Úkolová",  unit: "ks",  per: "€ / úlohu", qtyLabel: "Počet úloh" },
+    task: { label: "Úkolová",  unit: "ks",  per: "€", qtyLabel: "Počet úloh" },
   };
   const moneyFmt = new Intl.NumberFormat("sk-SK", { style: "currency", currency: "EUR" });
   const numFmt = new Intl.NumberFormat("sk-SK", { maximumFractionDigits: 2 });
@@ -468,11 +468,12 @@ main { padding-bottom: 40px; }
     const w = ev.work;
     if (!w || !RATE[w.type]) return null;
     const auto = autoQty(ev, w.type);
-    const qty = w.qty !== null && w.qty !== undefined && w.qty !== "" ? Number(w.qty) : auto;
-    const rate = Number(w.rate) || 0;
-    return { qty, auto, rate, unit: RATE[w.type].unit, amount: qty == null ? null : Math.round(qty * rate * 100) / 100 };
+    const qty = w.type === "task" ? 1 : (w.qty !== null && w.qty !== undefined && w.qty !== "" ? Number(w.qty) : auto);
+    const rate = w.rate === null || w.rate === undefined || w.rate === "" ? null : Number(w.rate);
+    return { qty, auto, rate, unit: RATE[w.type].unit, amount: qty == null || rate == null ? null : Math.round(qty * rate * 100) / 100 };
   }
   async function saveWorkplace(w) {
+    // rate 0 = not agreed yet (entered on each event instead)
     const row = { id: w.id || newId(), name: w.name.trim(), rate_type: w.rate_type, rate: Number(w.rate) || 0, note: w.note || "", archived: !!w.archived };
     if (!sb || !uid) { state.workplaces.set(row.id, row); saveLocalWp(); return row; }
     const { error } = await sb.from("workplaces").upsert(row);
@@ -487,15 +488,24 @@ main { padding-bottom: 40px; }
     const name = h("input", { id: "wp-name-" + key, type: "text", value: w.name, placeholder: "Názov odberateľa, napr. Stavby Novák s.r.o.", maxlength: "120", "aria-label": "Názov pracovného miesta" });
     const type = h("select", { id: "wp-type-" + key, "aria-label": "Druh sadzby" }, Object.keys(RATE).map(k => h("option", { value: k, text: RATE[k].label + " sadzba" })));
     type.value = w.rate_type;
-    const rate = h("input", { id: "wp-rate-" + key, type: "text", inputmode: "decimal", value: w.rate === "" ? "" : (Number(w.rate) || 0).toFixed(2).replace(".", ","), placeholder: "0,00", "aria-label": "Sadzba v eurách" });
-    const per = h("span", { class: "per", text: RATE[w.rate_type].per });
-    type.addEventListener("change", () => { per.textContent = RATE[type.value].per; });
+    const rate = h("input", { id: "wp-rate-" + key, type: "text", inputmode: "decimal", value: Number(w.rate) > 0 ? Number(w.rate).toFixed(2).replace(".", ",") : "", "aria-label": "Sadzba v eurách" });
+    const per = h("span", { class: "per" });
+    const rateHint = h("p", { class: "hint" });
+    function drawType() {
+      const task = type.value === "task";
+      per.textContent = task ? "€ / úlohu" : RATE[type.value].per;
+      rate.placeholder = task ? "nepovinné" : "nepovinné, napr. 15,00";
+      rateHint.textContent = task
+        ? "Pri úkolovej sadzbe zadáš sumu pri každej akcii zvlášť. Sem môžeš dať obvyklú sumu, ktorá sa predvyplní."
+        : "Sadzbu môžeš nechať prázdnu a doplniť neskôr.";
+    }
+    type.addEventListener("change", drawType); drawType();
     const err = h("p", { class: "err", hidden: true });
     const save = h("button", { class: "primary", type: "button", text: initial ? "Uložiť" : "Pridať pracovné miesto" });
     save.addEventListener("click", async () => {
-      const r = toNum(rate.value);
+      const r = rate.value.trim() === "" ? 0 : toNum(rate.value);
       if (!name.value.trim()) { err.textContent = "Zadaj názov pracovného miesta."; err.hidden = false; name.focus(); return; }
-      if (r === null || r < 0) { err.textContent = "Zadaj sadzbu v eurách, napr. 12,50."; err.hidden = false; rate.focus(); return; }
+      if (r === null || r < 0) { err.textContent = "Sadzbu zadaj ako číslo, napr. 12,50, alebo ju nechaj prázdnu."; err.hidden = false; rate.focus(); return; }
       save.disabled = true;
       try { const row = await saveWorkplace({ ...w, name: name.value, rate_type: type.value, rate: r }); onDone(row); }
       catch (msg) { err.textContent = msg; err.hidden = false; save.disabled = false; }
@@ -503,7 +513,7 @@ main { padding-bottom: 40px; }
     const box = h("div", { class: "wp-form" },
       name,
       h("div", { class: "wp-rate" }, type, h("div", { class: "money-in" }, rate, per)),
-      err,
+      rateHint, err,
       h("div", { class: "wp-actions" }, onCancel ? h("button", { class: "ghost", type: "button", onclick: onCancel, text: "Zrušiť" }) : null, save),
     );
     setTimeout(() => { if (!initial) name.focus(); }, 30);
@@ -814,7 +824,7 @@ main { padding-bottom: 40px; }
         h("strong", { text: money(total) }),
         h("span", { class: "hint", text: rows.length + " " + (rows.length === 1 ? "akcia" : rows.length >= 2 && rows.length <= 4 ? "akcie" : "akcií") + " s pracovným miestom" }),
       ),
-      missing.length ? h("p", { class: "warn", text: "Pri " + missing.length + " " + (missing.length === 1 ? "akcii" : "akciách") + " chýbajú hodiny (zadaj čas od – do alebo počet hodín), suma sa nezapočítala." }) : null,
+      missing.length ? h("p", { class: "warn", text: "Pri " + missing.length + " " + (missing.length === 1 ? "akcii" : "akciách") + " chýba suma, sadzba alebo hodiny, do súčtu sa nezapočítali. Klikni na akciu nižšie a doplň ich." }) : null,
     );
 
     const byWp = gList.length ? h("div", { class: "tbl-wrap" }, h("table", { class: "tbl" },
@@ -834,7 +844,7 @@ main { padding-bottom: 40px; }
         h("td", { class: "mono", text: rangeText(e) }),
         h("td", {}, e.title, e.status === "done" ? h("span", { class: "pill", dataset: { s: "done" }, text: "Hotovo" }) : null),
         h("td", { text: e.work.name }),
-        h("td", { class: "n", text: p && p.qty != null ? num(p.qty) + " " + p.unit + " × " + money(p.rate) : "chýba množstvo" }),
+        h("td", { class: "n", text: !p ? "–" : p.rate == null ? (e.work.type === "task" ? "chýba suma" : "chýba sadzba") : p.qty == null ? "chýbajú hodiny" : e.work.type === "task" ? "úloha" : num(p.qty) + " " + p.unit + " × " + money(p.rate) }),
         h("td", { class: "n", text: p && p.amount != null ? money(p.amount) : "–" }),
       ))),
     )) : null;
@@ -849,7 +859,9 @@ main { padding-bottom: 40px; }
       }
       list.append(h("div", { class: "wp-row" + (w.archived ? " archived" : "") },
         h("div", { class: "wp-main" }, h("strong", { text: w.name }),
-          h("span", { class: "hint", text: RATE[w.rate_type].label + " sadzba · " + money(w.rate) + " " + RATE[w.rate_type].per.replace("€ ", "") + (w.archived ? " · archivované" : "") })),
+          h("span", { class: "hint", text: RATE[w.rate_type].label + " sadzba · " +
+            (Number(w.rate) > 0 ? money(w.rate) + (w.rate_type === "task" ? " / úlohu (obvykle)" : " " + RATE[w.rate_type].per.replace("€ ", "")) : (w.rate_type === "task" ? "suma sa zadáva pri akcii" : "sadzba zatiaľ nezadaná")) +
+            (w.archived ? " · archivované" : "") })),
         h("button", { class: "ghost", type: "button", onclick: () => { wpEditing = w.id; render(); }, text: "Upraviť" }),
         h("button", { class: "ghost", type: "button", onclick: async () => {
           try { await saveWorkplace({ ...w, archived: !w.archived }); render(); toast(w.archived ? "Pracovné miesto obnovené" : "Pracovné miesto archivované"); }
@@ -919,6 +931,8 @@ main { padding-bottom: 40px; }
     const payPer = h("span", { class: "per" });
     const payQty = h("input", { id: "f-payqty", type: "text", inputmode: "decimal", "aria-label": "Množstvo" });
     const payQtyLbl = h("label", { for: "f-payqty" });
+    const payRateLbl = h("label", { for: "f-payrate", text: "Sadzba" });
+    const payQtyField = h("div", { class: "field" }, payQtyLbl, payQty);
     const payOut = h("div", { class: "pay-out" });
     function currentEv() {
       return { date: date.value, endDate: endDate.value, time: time.value, end: end.value, work: draft.work };
@@ -926,8 +940,8 @@ main { padding-bottom: 40px; }
     function syncWorkFromInputs() {
       if (!draft.work) return;
       draft.work.type = payType.value;
-      const r = toNum(payRate.value); draft.work.rate = r === null ? 0 : r;
-      const q = payQty.value.trim() === "" ? null : toNum(payQty.value); draft.work.qty = q;
+      draft.work.rate = payRate.value.trim() === "" ? null : toNum(payRate.value);
+      draft.work.qty = draft.work.type === "task" || payQty.value.trim() === "" ? null : toNum(payQty.value);
     }
     function drawPay() {
       payBox.hidden = !draft.work;
@@ -935,23 +949,31 @@ main { padding-bottom: 40px; }
       syncWorkFromInputs();
       const ev = currentEv();
       const auto = autoQty(ev, draft.work.type);
+      const task = draft.work.type === "task";
       payPer.textContent = RATE[draft.work.type].per;
+      payRateLbl.textContent = task ? "Suma za túto úlohu" : "Sadzba";
+      payRate.placeholder = task ? "zadaj sumu" : "0,00";
+      payQtyField.hidden = task;
       payQtyLbl.textContent = RATE[draft.work.type].qtyLabel;
       payQty.placeholder = auto == null ? "zadaj" : num(auto) + " (z času)";
       const p = payOf(ev);
-      payOut.replaceChildren(p && p.amount != null
-        ? h("span", {}, num(p.qty) + " " + p.unit + " × " + money(p.rate) + " = ", h("strong", { text: money(p.amount) }))
-        : h("span", { class: "hint", text: draft.work.type === "hour" ? "Zadaj čas od – do alebo počet hodín." : "Zadaj množstvo." }));
+      let msg = null;
+      if (p && p.rate == null) msg = task ? "Zadaj sumu za túto úlohu. Môžeš ju doplniť aj neskôr." : "Zadaj sadzbu. Môžeš ju doplniť aj neskôr.";
+      else if (p && p.qty == null) msg = draft.work.type === "hour" ? "Zadaj čas od – do alebo počet hodín." : "Zadaj množstvo.";
+      payOut.replaceChildren(msg ? h("span", { class: "hint", text: msg })
+        : task ? h("span", {}, "Suma: ", h("strong", { text: money(p.amount) }))
+        : h("span", {}, num(p.qty) + " " + p.unit + " × " + money(p.rate) + " = ", h("strong", { text: money(p.amount) })));
     }
     function loadPayInputs() {
       if (!draft.work) return;
       payType.value = draft.work.type;
-      payRate.value = (Number(draft.work.rate) || 0).toFixed(2).replace(".", ",");
+      payRate.value = draft.work.rate == null ? "" : Number(draft.work.rate).toFixed(2).replace(".", ",");
       payQty.value = draft.work.qty == null ? "" : String(draft.work.qty).replace(".", ",");
     }
     function useWorkplace(w) {
-      draft.work = { wp: w.id, name: w.name, type: w.rate_type, rate: Number(w.rate) || 0, qty: null };
+      draft.work = { wp: w.id, name: w.name, type: w.rate_type, rate: Number(w.rate) > 0 ? Number(w.rate) : null, qty: null };
       loadPayInputs(); drawPay();
+      if (draft.work.rate == null) setTimeout(() => payRate.focus(), 30);
     }
     wpSel.addEventListener("change", () => {
       if (wpSel.value === "__new") {
@@ -972,8 +994,8 @@ main { padding-bottom: 40px; }
     payBox.append(
       h("div", { class: "pay-grid" },
         h("div", { class: "field" }, h("label", { for: "f-paytype", text: "Druh sadzby" }), payType),
-        h("div", { class: "field" }, h("label", { for: "f-payrate", text: "Sadzba" }), h("div", { class: "money-in" }, payRate, payPer)),
-        h("div", { class: "field" }, payQtyLbl, payQty),
+        h("div", { class: "field" }, payRateLbl, h("div", { class: "money-in" }, payRate, payPer)),
+        payQtyField,
       ),
       payOut,
     );
@@ -1100,7 +1122,7 @@ main { padding-bottom: 40px; }
       }
       draft.endDate = endD === draft.date ? "" : endD;
       syncWorkFromInputs();
-      if (draft.work && toNum(payRate.value) === null) { err.textContent = "Zadaj sadzbu v eurách, napr. 12,50."; err.hidden = false; payRate.focus(); return; }
+      if (draft.work && payRate.value.trim() !== "" && (toNum(payRate.value) === null || toNum(payRate.value) < 0)) { err.textContent = "Sumu zadaj ako číslo, napr. 12,50, alebo ju nechaj prázdnu."; err.hidden = false; payRate.focus(); return; }
       if (draft.work && payQty.value.trim() !== "" && (toNum(payQty.value) === null || toNum(payQty.value) < 0)) { err.textContent = "Množstvo zadaj ako číslo, napr. 7,5."; err.hidden = false; payQty.focus(); return; }
       if (busyUploads) { err.textContent = "Počkaj, kým sa dokončí nahrávanie príloh."; err.hidden = false; return; }
       saveBtn.disabled = true; saveBtn.textContent = "Ukladám…";

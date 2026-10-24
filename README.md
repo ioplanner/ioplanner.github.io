@@ -62,7 +62,10 @@ Zmeny: otvor súbor na GitHube → ceruzka → uprav → **Commit changes**. Str
 
 - **Pracovné miesto** je odberateľ s dohodnutou sadzbou: **hodinová** (€/hod), **denná** (€/deň) alebo **úkolová** (€/úlohu).
 - V detaile akcie ho vyberieš pod názvom, nové pridáš priamo tam (*+ Nové pracovné miesto…*) alebo v pohľade **Mzdy**.
-- Množstvo sa doplní samo: hodiny z času od – do, dni z dátumov, pri úkolovej 1 úloha. Dá sa prepísať, napr. po odpočítaní prestávky.
+- Pracovné miesto sa dá uložiť aj **bez sadzby**, stačí názov a druh. Sadzbu doplníš neskôr v *Mzdy → Upraviť* alebo priamo pri akcii.
+- **Úkolová sadzba:** sumu zadáš pri každej akcii zvlášť (*Suma za túto úlohu*). Ak má pracovné miesto vyplnenú obvyklú sumu, predvyplní sa a dá sa prepísať.
+- Množstvo sa doplní samo: hodiny z času od – do, dni z dátumov. Dá sa prepísať, napr. po odpočítaní prestávky.
+- Akcie, pri ktorých chýba suma, sadzba alebo hodiny, sa do súčtu nezapočítajú a pohľad **Mzdy** na ne upozorní.
 - Sadzba sa uloží pri akcii, takže neskoršia zmena sadzby nezmení staré akcie. Pri akcii sa dá upraviť aj ručne.
 - Pohľad **Mzdy** (`#mzdy`): suma za mesiac, súčty podľa pracovných miest a zoznam akcií. Akcia patrí do mesiaca, v ktorom začína. Voľba *Len hotové* započíta iba akcie v stave Hotovo.
 - Pracovné miesto, s ktorým už nespolupracuješ, **archivuj**: zmizne z výberu, staré akcie a sumy ostanú.
