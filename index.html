@@ -145,7 +145,7 @@ header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; b
 .col-h { display: flex; align-items: baseline; justify-content: space-between; padding: 2px 4px 4px; }
 .col-h h3 { margin: 0; font-family: var(--f-display); font-size: 1.05rem; }
 .col-h span { font-family: var(--f-mono); font-size: .8rem; color: var(--muted); }
-.board .card { cursor: grab; }
+.board .card { cursor: pointer; }
 .board .card.dragging { opacity: .45; }
 .move { display: inline-flex; gap: 4px; margin-left: auto; }
 .move button { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; font-size: .75rem; padding: 0 6px; line-height: 1.6; }
@@ -159,6 +159,7 @@ header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; b
 .field input, .field select, .field textarea { width: 100%; border: 1px solid var(--line); background: var(--surface-2); border-radius: 9px; padding: 9px 10px; min-width: 0; }
 .field textarea { min-height: 90px; resize: vertical; }
 .row { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 10px; }
+.status-auto { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .pay-box { display: flex; flex-direction: column; gap: 8px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-top: 4px; }
 .pay-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
 .money-in { display: flex; align-items: center; gap: 6px; }
@@ -367,6 +368,14 @@ main { padding-bottom: 40px; }
     return list.sort((a, b) => (a.date + (a.time || "99")).localeCompare(b.date + (b.time || "99")) || a.title.localeCompare(b.title));
   }
   const lastDay = e => e.endDate || e.date;
+  // status follows the calendar: future = planned, today (or running across today) = in progress, past = done
+  function statusOf(e) {
+    const t = todayIso();
+    if (!e.date) return "todo";
+    if (lastDay(e) < t) return "done";
+    if (e.date > t) return "todo";
+    return "doing";
+  }
   const isMulti = e => !!e.endDate && e.endDate !== e.date;
   function eventsOn(dateStr) {
     // events running on this day; ones that started earlier come first
@@ -412,7 +421,7 @@ main { padding-bottom: 40px; }
         wp: ev.work.wp || "", name: ev.work.name || "", type: ev.work.type,
         rate: ev.work.rate === null || ev.work.rate === undefined || ev.work.rate === "" ? null : Number(ev.work.rate), qty: ev.work.qty === null || ev.work.qty === "" || ev.work.qty === undefined ? null : Number(ev.work.qty),
       } : null,
-      status: ev.status, notes: ev.notes || "",
+      status: statusOf(ev), notes: ev.notes || "",
       checklist: (ev.checklist || []).filter(c => c.text.trim()).map(c => ({ id: c.id, text: c.text.trim(), done: !!c.done })),
       attachments: (ev.attachments || []).map(a => ({ path: a.path, name: a.name, size: a.size || 0, kind: a.kind || "ine", added: a.added || Date.now() })),
       updated: Date.now(),
@@ -687,48 +696,31 @@ main { padding-bottom: 40px; }
     periodEl.replaceChildren("Nástenka ", h("span", { text: state.boardScope === "upcoming" ? "od dnes" : "všetko" }));
     const t = todayIso();
     let all = sortEvents([...state.events.values()]);
-    if (state.boardScope === "upcoming") all = all.filter(e => lastDay(e) >= t || e.status !== "done");
+    const recent = iso(addDays(parse(t), -14));
+    if (state.boardScope === "upcoming") all = all.filter(e => lastDay(e) >= recent);
     const tools = h("div", { class: "board-tools" },
       h("span", { text: "Zobraziť:" }),
       h("div", { class: "seg", role: "group", "aria-label": "Rozsah nástenky" },
         h("button", { id: "scope-up", "aria-pressed": String(state.boardScope === "upcoming"), onclick: () => { state.boardScope = "upcoming"; render(); }, text: "Aktuálne" }),
         h("button", { id: "scope-all", "aria-pressed": String(state.boardScope === "all"), onclick: () => { state.boardScope = "all"; render(); }, text: "Všetko" }),
       ),
-      h("span", { text: "Presúvaj karty potiahnutím alebo šípkami." }),
+      h("span", { text: state.boardScope === "upcoming" ? "Stav sa nastavuje sám podľa dátumu. Hotové za posledných 14 dní." : "Stav sa nastavuje sám podľa dátumu." }),
     );
     const board = h("div", { class: "board" });
-    ORDER.forEach((s, idx) => {
-      const items = all.filter(e => e.status === s);
-      const col = h("div", { class: "col", dataset: { s },
-        ondragover: e => { e.preventDefault(); col.classList.add("over"); },
-        ondragleave: () => col.classList.remove("over"),
-        ondrop: e => { e.preventDefault(); col.classList.remove("over"); const id = e.dataTransfer.getData("text/plain"); setStatus(id, s); },
-      },
+    const emptyText = { todo: "Nič naplánované.", doing: "Dnes neprebieha žiadna akcia.", done: "Zatiaľ nič hotové." };
+    ORDER.forEach(s => {
+      let items = all.filter(e => e.status === s);
+      if (s === "done") items = items.reverse(); // newest finished first
+      const col = h("div", { class: "col", dataset: { s } },
         h("div", { class: "col-h" }, h("h3", { text: STATUS[s] }), h("span", { text: items.length })),
-        items.length ? null : h("p", { class: "empty", text: s === "done" ? "Sem presuň, čo je vybavené." : "Prázdne." }),
+        items.length ? null : h("p", { class: "empty", text: emptyText[s] }),
       );
-      items.forEach(ev => {
-        const move = h("span", { class: "move" },
-          idx > 0 ? h("button", { type: "button", "aria-label": "Presunúť do " + STATUS[ORDER[idx - 1]], onclick: e => { e.stopPropagation(); setStatus(ev.id, ORDER[idx - 1]); }, text: "←" }) : null,
-          idx < 2 ? h("button", { type: "button", "aria-label": "Presunúť do " + STATUS[ORDER[idx + 1]], onclick: e => { e.stopPropagation(); setStatus(ev.id, ORDER[idx + 1]); }, text: "→" }) : null,
-        );
-        const c = card(ev, { showDate: true, pill: false, move });
-        c.draggable = true;
-        c.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", ev.id); c.classList.add("dragging"); });
-        c.addEventListener("dragend", () => c.classList.remove("dragging"));
-        col.append(c);
-      });
+      items.forEach(ev => col.append(card(ev, { showDate: true, pill: false })));
       board.append(col);
     });
     viewEl.replaceChildren(tools, board);
   }
 
-  async function setStatus(id, s) {
-    const ev = state.events.get(id);
-    if (!ev || ev.status === s) return;
-    try { await saveEvent(id, { ...ev, status: s }); toast("Presunuté: " + STATUS[s]); }
-    catch (msg) { toast(msg); }
-  }
 
   let signUpMode = false;
   function renderGate() {
@@ -774,6 +766,7 @@ main { padding-bottom: 40px; }
   }
 
   function render() {
+    for (const e of state.events.values()) e.status = statusOf(e);
     document.querySelectorAll(".bar .seg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === state.view)));
     document.getElementById("new-btn").hidden = state.gate;
     if (state.gate) { ["prev", "next", "today-btn"].forEach(id => document.getElementById(id).hidden = true); renderGate(); return; }
@@ -1009,14 +1002,13 @@ main { padding-bottom: 40px; }
     const notes = h("textarea", { id: "f-notes", placeholder: "Adresa, čo si zobrať, kontakt…" });
     notes.value = draft.notes || "";
 
-    const statusBox = h("div", { class: "status-pick", role: "group", "aria-label": "Stav" });
+    const statusBox = h("div", { class: "status-auto" });
     function drawStatus() {
-      statusBox.replaceChildren(...ORDER.map(s => h("button", {
-        type: "button", dataset: { s }, "aria-pressed": String(draft.status === s),
-        onclick: () => { draft.status = s; drawStatus(); }, text: STATUS[s],
-      })));
+      const st = statusOf({ date: date.value, endDate: endDate.value });
+      statusBox.replaceChildren(h("span", { class: "pill", dataset: { s: st }, text: STATUS[st] }), h("span", { class: "hint", text: "nastavuje sa sám podľa dátumu" }));
     }
     drawStatus();
+    [date, endDate].forEach(el => el.addEventListener("change", drawStatus));
 
     const checks = h("div", { class: "checks" });
     function drawChecks() {
@@ -1239,6 +1231,12 @@ main { padding-bottom: 40px; }
   }
 
   render();
+
+  // re-evaluate statuses when the day changes while the page is open
+  let renderedDay = todayIso();
+  setInterval(() => {
+    if (todayIso() !== renderedDay) { renderedDay = todayIso(); if (!document.getElementById("modal-root").children.length) render(); }
+  }, 60000);
 
   // ---------- Connect store ----------
   const syncEl = document.getElementById("sync");

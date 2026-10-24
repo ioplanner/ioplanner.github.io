@@ -75,7 +75,17 @@ function wall(dateStr, timeStr) {
   return new Date(Date.UTC(y, m - 1, d, hh || 0, mm || 0));
 }
 
+// Status follows the calendar (same rule as the diary): past = done, today = in progress, future = planned
+const todayLocal = () => new Intl.DateTimeFormat("en-CA", { timeZone: TZID }).format(new Date());
+function statusOf(ev, today = todayLocal()) {
+  const last = ev.end_date && ev.end_date > ev.event_date ? ev.end_date : ev.event_date;
+  if (last < today) return "done";
+  if (ev.event_date > today) return "todo";
+  return "doing";
+}
+
 export function buildEvent(ev) {
+  const status = statusOf(ev);
   const lines = ["BEGIN:VEVENT", "UID:" + ev.id + "@ioplanner"];
   lines.push("DTSTAMP:" + utcStamp(ev.updated_at));
   if (ev.updated_at) lines.push("LAST-MODIFIED:" + utcStamp(ev.updated_at));
@@ -98,10 +108,10 @@ export function buildEvent(ev) {
     lines.push("DTEND;VALUE=DATE:" + ymd(new Date(wall(endDate).getTime() + 86400e3)));
   }
 
-  const done = ev.status === "done";
+  const done = status === "done";
   lines.push("SUMMARY:" + esc((done ? "✓ " : "") + ev.title));
 
-  const parts = ["Stav: " + (STATUS[ev.status] || STATUS.todo)];
+  const parts = ["Stav: " + STATUS[status]];
   if (ev.notes && ev.notes.trim()) parts.push(ev.notes.trim());
   const checklist = Array.isArray(ev.checklist) ? ev.checklist : [];
   if (checklist.length) {
@@ -112,7 +122,7 @@ export function buildEvent(ev) {
     parts.push("Prílohy (otvoríš v diári):\n" + files.map((a) => "• " + (KINDS[a.kind] || KINDS.ine) + ": " + a.name).join("\n"));
   }
   lines.push("DESCRIPTION:" + esc(parts.join("\n\n")));
-  lines.push("CATEGORIES:" + esc(STATUS[ev.status] || STATUS.todo));
+  lines.push("CATEGORIES:" + esc(STATUS[status]));
   lines.push("URL:" + SITE);
   lines.push("TRANSP:" + (start ? "OPAQUE" : "TRANSPARENT"));
   lines.push("END:VEVENT");

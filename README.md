@@ -5,6 +5,7 @@ Súkromný kalendár s mesačným a týždenným pohľadom, kanban nástenkou (*
 - Adresa: **https://ioplanner.github.io/**
 - Pohľady sa dajú otvoriť aj priamo: `#mesiac`, `#tyzden`, `#nastenka`.
 - Na mobile: Safari → Zdieľať → *Pridať na plochu*, Chrome → ⋮ → *Pridať na plochu*.
+- **Stav sa nastavuje sám podľa dátumu:** budúce akcie sú *Naplánované*, dnešné (aj viacdňové, ktoré práve bežia) *Prebieha*, minulé *Hotovo*.
 
 ---
 
