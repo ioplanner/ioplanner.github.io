@@ -189,6 +189,14 @@ header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; b
 .file .x { border: 0; background: transparent; color: var(--muted); font-size: 1.1rem; padding: 0 4px; }
 .file-add { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .file-add .hint { color: var(--muted); font-size: .8rem; }
+.feed-lead { margin: 0; color: var(--muted); }
+.feed-body { display: flex; flex-direction: column; gap: 12px; }
+a.feed-add { display: block; text-align: center; text-decoration: none; padding: 11px 14px; }
+.hint { margin: 0; color: var(--muted); font-size: .85rem; }
+.hint a { color: var(--accent); }
+.steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: .9rem; }
+.steps b { font-weight: 600; }
+#feed-url { font-family: var(--f-mono); font-size: .75rem; }
 @media (max-width: 620px) { .file { grid-template-columns: minmax(0, 1fr) auto auto; } .file .kind { grid-column: 1 / -1; justify-self: start; } }
 
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 10px; font-size: .88rem; z-index: 30; box-shadow: var(--shadow); }
@@ -227,6 +235,7 @@ main { padding-bottom: 40px; }
       <button id="v-board" data-v="board">Nástenka</button>
     </div>
     <button class="primary" id="new-btn">+ Nová akcia</button>
+    <button class="ghost" id="cal-btn" hidden>Kalendár Apple</button>
     <button class="ghost" id="auth-btn" hidden>Odhlásiť</button>
   </div>
 </header>
@@ -762,6 +771,75 @@ main { padding-bottom: 40px; }
     if (!src) setTimeout(() => title.focus(), 30);
   }
 
+  // ---------- Apple Calendar subscription ----------
+  function openFeed() {
+    const root = document.getElementById("modal-root");
+    const body = h("div", { class: "feed-body" }, h("p", { class: "empty", text: "Pripravujem adresu…" }));
+    const err = h("p", { class: "err", hidden: true });
+    const modal = h("div", { class: "modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "feed-title" },
+      h("h2", { id: "feed-title", text: "Kalendár na iPhone a Macu" }),
+      h("p", { class: "feed-lead", text: "Akcie z diára sa zobrazia v aplikácii Kalendár ako samostatný kalendár „Osobný diár“. Nové, upravené aj vymazané akcie sa prejavia samy, zvyčajne do 15 – 60 minút. Upravuješ ich tu v diári." }),
+      body, err,
+      h("div", { class: "modal-foot" }, h("span", { class: "spacer" }), h("button", { class: "ghost", type: "button", onclick: () => close(), text: "Zavrieť" })),
+    );
+    const overlay = h("div", { class: "overlay", onclick: e => { if (e.target === overlay) close(); } }, modal);
+    function onKey(e) { if (e.key === "Escape") close(); }
+    function close() { document.removeEventListener("keydown", onKey); root.replaceChildren(); render(); }
+    document.addEventListener("keydown", onKey);
+    root.replaceChildren(overlay);
+
+    function feedErr(e) {
+      const m = ((e && e.message) || "") + "";
+      if (/calendar_feeds|relation|does not exist|schema cache/i.test(m)) return "V databáze ešte chýba tabuľka pre kalendár. V Supabase spusti súbor supabase-kalendar.sql (pozri README).";
+      if (/fetch|network/i.test(m)) return "Si offline. Adresu kalendára sa nepodarilo načítať.";
+      return "Adresu sa nepodarilo pripraviť: " + (m || "neznáma chyba");
+    }
+    async function getToken() {
+      const got = await sb.from("calendar_feeds").select("token").eq("user_id", uid).maybeSingle();
+      if (got.error) throw got.error;
+      if (got.data) return got.data.token;
+      const ins = await sb.from("calendar_feeds").insert({}).select("token").single();
+      if (ins.error) throw ins.error;
+      return ins.data.token;
+    }
+    async function show() {
+      err.hidden = true;
+      try { draw(await getToken()); }
+      catch (e) { body.replaceChildren(); err.textContent = feedErr(e); err.hidden = false; }
+    }
+    function draw(token) {
+      const https = SUPABASE_URL + "/functions/v1/kalendar?t=" + token;
+      const webcal = https.replace(/^https:/, "webcal:");
+      const input = h("input", { id: "feed-url", type: "text", readonly: true, value: https, "aria-label": "Adresa kalendára" });
+      input.addEventListener("focus", () => input.select());
+      const copy = h("button", { class: "ghost", type: "button", text: "Kopírovať", onclick: async () => {
+        try { await navigator.clipboard.writeText(https); toast("Adresa skopírovaná"); }
+        catch (e) { input.focus(); input.select(); toast("Adresa je označená, skopíruj ju."); }
+      } });
+      let armed = false;
+      const regen = h("button", { class: "danger", type: "button", text: "Vytvoriť novú adresu", onclick: async () => {
+        if (!armed) { armed = true; regen.classList.add("armed"); regen.textContent = "Stará adresa prestane fungovať. Pokračovať?"; return; }
+        regen.disabled = true;
+        const d = await sb.from("calendar_feeds").delete().eq("user_id", uid);
+        if (d.error) { err.textContent = feedErr(d.error); err.hidden = false; regen.disabled = false; return; }
+        await show(); toast("Vytvorená nová adresa. V Kalendári odstráň starú a pridaj túto.");
+      } });
+      body.replaceChildren(
+        h("a", { class: "primary feed-add", href: webcal, text: "Pridať do Kalendára" }),
+        h("p", { class: "hint", text: "Na iPhone, iPade a Macu otvorí Kalendár s ponukou na odoberanie. Ak sa nič nestane, pridaj adresu ručne:" }),
+        h("div", { class: "field" }, h("label", { for: "feed-url", text: "Adresa kalendára" }), h("div", { class: "add-check" }, input, copy)),
+        h("ol", { class: "steps" },
+          h("li", {}, h("b", { text: "Mac (odporúčané): " }), "Kalendár → Súbor → Nový odoberaný kalendár → vlož adresu. V ďalšom okne nastav Umiestnenie: iCloud a Obnovovať: každých 15 minút. Potom sa objaví sám aj na iPhone a iPade."),
+          h("li", {}, h("b", { text: "iPhone / iPad: " }), "Nastavenia → Aplikácie → Kalendár → Účty kalendárov → Pridať účet → Iné → Pridať odoberaný kalendár → vlož adresu."),
+        ),
+        h("p", { class: "hint" }, "Adresu nikomu neposielaj, kto ju má, vidí tvoje akcie. ",
+          h("a", { href: https, target: "_blank", rel: "noopener", text: "Vyskúšať adresu" })),
+        h("div", { class: "modal-foot" }, regen),
+      );
+    }
+    show();
+  }
+
   // ---------- Controls ----------
   document.querySelectorAll(".bar .seg button").forEach(b => b.addEventListener("click", () => {
     state.view = b.dataset.v;
@@ -790,6 +868,8 @@ main { padding-bottom: 40px; }
     notice.textContent = msg; notice.hidden = false;
   }
   const authBtn = document.getElementById("auth-btn");
+  const calBtn = document.getElementById("cal-btn");
+  calBtn.addEventListener("click", () => openFeed());
   const modalOpen = () => document.getElementById("modal-root").children.length > 0;
 
   const configured = /^https:\/\//.test(SUPABASE_URL) && SUPABASE_KEY && !SUPABASE_KEY.startsWith("VLOZ");
@@ -845,11 +925,11 @@ main { padding-bottom: 40px; }
     notice.hidden = true;
     if (!uid) {
       state.events = new Map(); state.gate = true;
-      authBtn.hidden = true; syncEl.textContent = "neprihlásený";
+      authBtn.hidden = true; calBtn.hidden = true; syncEl.textContent = "neprihlásený";
       render(); return;
     }
     state.gate = false;
-    authBtn.hidden = false; authBtn.title = user.email || "";
+    authBtn.hidden = false; calBtn.hidden = false; authBtn.title = user.email || "";
     // show the last known events right away, then refresh from the database
     try {
       const cached = JSON.parse(localStorage.getItem("diar.cache." + uid) || "[]");
