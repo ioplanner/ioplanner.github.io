@@ -46,7 +46,7 @@ Zmeny: otvor súbor na GitHube → ceruzka → uprav → **Commit changes**. Str
 | „Nesprávny e-mail alebo heslo“ | skontroluj účet v Authentication → Users |
 | „Úložisko na prílohy ešte neexistuje“ alebo „Databáza ešte nepozná prílohy“ | spusti supabase-prilohy.sql |
 | „chýba tabuľka pre kalendár“ | spusti supabase-kalendar.sql |
-| Kalendár Apple hlási chybu alebo „Vyskúšať adresu“ ukáže *Missing authorization header* | vo funkcii **kalendar** vypni **Verify JWT** |
+| Kalendár Apple hlási chybu alebo „Vyskúšať adresu“ ukáže *Missing authorization header* | vo funkcii **swift-service** vypni **Verify JWT** |
 | „Vyskúšať adresu“ ukáže *Function not found* | funkcia ešte nie je nasadená (Kalendár Apple, krok 2) |
 | Diár zrazu nič nenačíta | projekt v Supabase je pozastavený (*Paused*), klikni **Restore project** |
 
@@ -63,8 +63,8 @@ Akcie z diára sa dajú odoberať v aplikácii Kalendár na iPhone, iPade a Macu
 **Jednorazové nastavenie v Supabase:**
 
 1. **SQL Editor** → **New query** → vlož obsah **supabase-kalendar.sql** → **Run**.
-2. **Edge Functions** → **Deploy a new function** → **Via Editor**. Názov funkcie: **`kalendar`** (presne takto). Celý obsah súboru **supabase/functions/kalendar/index.ts** vlož do editora namiesto ukážkového kódu → **Deploy function**.
-3. Vo funkcii **kalendar** otvor **Details** (alebo *Settings*) a **vypni Verify JWT** (*Enforce JWT verification*) → **Save**. Kalendár Apple sa neprihlasuje, prístup chráni tajný kľúč v adrese.
+2. **Edge Functions** → **Deploy a new function** → **Via Editor**. Názov funkcie je v tomto projekte **`swift-service`** (ak vytvoríš novú s iným názvom, zmeň `FEED_FUNCTION` na začiatku index.html). Celý obsah súboru **supabase/functions/kalendar/index.ts** vlož do editora namiesto ukážkového kódu → **Deploy function**.
+3. Vo funkcii **swift-service** otvor **Details** (alebo *Settings*) a **vypni Verify JWT** (*Enforce JWT verification*) → **Save**. Kalendár Apple sa neprihlasuje, prístup chráni tajný kľúč v adrese.
 
 **V diári:** tlačidlo **Kalendár Apple** → **Pridať do Kalendára**. Alebo adresu skopíruj a pridaj ručne:
 

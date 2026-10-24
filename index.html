@@ -259,6 +259,7 @@ main { padding-bottom: 40px; }
   // ===== NASTAVENIE: sem vlož údaje zo Supabase (pozri NAVOD.md, krok 3) =====
   const SUPABASE_URL = "https://mtifpeafpmkeimqiqfym.supabase.co";
   const SUPABASE_KEY = "sb_publishable_sUqoAz8t_mJuAd4VR9Fw7Q_HlGTDAqg";
+  const FEED_FUNCTION = "swift-service"; // názov Edge Function s kalendárom (Supabase → Edge Functions)
   // ===========================================================================
 
   const MONTHS = ["január","február","marec","apríl","máj","jún","júl","august","september","október","november","december"];
@@ -808,7 +809,7 @@ main { padding-bottom: 40px; }
       catch (e) { body.replaceChildren(); err.textContent = feedErr(e); err.hidden = false; }
     }
     function draw(token) {
-      const https = SUPABASE_URL + "/functions/v1/kalendar?t=" + token;
+      const https = SUPABASE_URL + "/functions/v1/" + FEED_FUNCTION + "?t=" + token;
       const webcal = https.replace(/^https:/, "webcal:");
       const input = h("input", { id: "feed-url", type: "text", readonly: true, value: https, "aria-label": "Adresa kalendára" });
       input.addEventListener("focus", () => input.select());
