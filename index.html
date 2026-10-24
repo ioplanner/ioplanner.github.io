@@ -172,7 +172,12 @@ header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; b
 .vat-line strong { color: var(--ink); font-family: var(--f-display); }
 .vat-sum { color: var(--muted); font-size: .9rem; font-variant-numeric: tabular-nums; }
 .vat-sum b { color: var(--ink); }
-.pay-sup { border-top: 1px dashed var(--line); padding-top: 8px; }
+.pay-sup { border-top: 1px dashed var(--line); padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.sup-rows { display: flex; flex-direction: column; gap: 6px; }
+.sup-line { display: grid; grid-template-columns: minmax(90px, 1fr) minmax(0, 1.6fr) auto auto; gap: 6px; align-items: center; }
+.sup-line .x { border: 0; background: transparent; color: var(--muted); font-size: 1.1rem; padding: 0 4px; }
+.sup-add { align-self: flex-start; padding: 5px 10px; font-size: .85rem; }
+@media (max-width: 620px) { .sup-line { grid-template-columns: minmax(0, 1fr) auto auto; } .sup-line input[list] { grid-column: 1 / -1; grid-row: 2; } }
 .profit { display: flex; flex-direction: column; gap: 10px; }
 .profit-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .pc { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -442,9 +447,7 @@ main { padding-bottom: 40px; }
         extra: ev.work.type !== "task" && Number(ev.work.extra) ? Number(ev.work.extra) : 0,
         extraNote: ev.work.type !== "task" && Number(ev.work.extra) ? (ev.work.extraNote || "").trim() : "",
         vat: Number(ev.work.vat) === 23 ? 23 : 0,
-        supplier: Number(ev.work.supplier) > 0 ? Math.round(Number(ev.work.supplier) * 100) / 100 : 0,
-        supplierName: Number(ev.work.supplier) > 0 ? (ev.work.supplierName || "").trim() : "",
-        supplierVat: Number(ev.work.supplier) > 0 && Number(ev.work.supplierVat) === 23 ? 23 : 0,
+        suppliers: supLines(ev.work).filter(l => l.cost > 0 || l.name).map(l => ({ name: l.name, cost: l.cost, vat: l.vat })),
       } : null,
       status: statusOf(ev), notes: ev.notes || "",
       checklist: (ev.checklist || []).filter(c => c.text.trim()).map(c => ({ id: c.id, text: c.text.trim(), done: !!c.done })),
@@ -506,11 +509,20 @@ main { padding-bottom: 40px; }
     const rate = w.rate === null || w.rate === undefined || w.rate === "" ? null : Number(w.rate);
     const extra = w.type === "task" ? 0 : Number(w.extra) || 0;   // "Iné": extra amount added on top of the rate
     const base = qty == null || rate == null ? null : qty * rate;
-    const cost = Number(w.supplier) > 0 ? Number(w.supplier) : 0;   // paid out to a supplier; only used for profit
-    return { qty, auto, rate, extra, extraNote: w.extraNote || "", unit: RATE[w.type].unit, base, cost, supplierName: w.supplierName || "",
-      costVatRate: Number(w.supplierVat) === 23 ? 23 : 0,
-      costVat: cost ? Math.round(cost * (Number(w.supplierVat) === 23 ? 23 : 0)) / 100 : 0,
+    // paid out to suppliers; only used for profit
+    const sups = supLines(w).filter(l => l.cost > 0).map(l => ({ ...l, vatAmt: Math.round(l.cost * l.vat) / 100 }));
+    const cost = Math.round(sups.reduce((a, l) => a + l.cost, 0) * 100) / 100;
+    const costVat = Math.round(sups.reduce((a, l) => a + l.vatAmt, 0) * 100) / 100;
+    return { qty, auto, rate, extra, extraNote: w.extraNote || "", unit: RATE[w.type].unit, base, cost, costVat, sups,
       amount: base == null ? null : Math.round((base + extra) * 100) / 100 };
+  }
+  // supplier lines of an event; older events stored a single supplier in flat fields
+  function supLines(w) {
+    if (!w) return [];
+    if (Array.isArray(w.suppliers)) return w.suppliers.map(l => ({
+      name: (l.name || "").trim(), cost: Math.round((Number(l.cost) || 0) * 100) / 100, vat: Number(l.vat) === 23 ? 23 : 0 }));
+    if (Number(w.supplier) > 0) return [{ name: (w.supplierName || "").trim(), cost: Number(w.supplier), vat: Number(w.supplierVat) === 23 ? 23 : 0 }];
+    return [];
   }
   // VAT on top of the (net) amount
   function vatOf(p, w) {
@@ -896,11 +908,11 @@ main { padding-bottom: 40px; }
     const costVatTotal = Math.round(costRows.reduce((a, r) => a + r.p.costVat, 0) * 100) / 100;
     const profitIncomplete = costRows.filter(r => r.p.amount == null).length;
     const suppliers = new Map();
-    costRows.forEach(({ p }) => {
-      const k = p.supplierName || "Bez mena";
+    costRows.forEach(({ p }) => p.sups.forEach(l => {
+      const k = l.name || "Bez mena";
       const g = suppliers.get(k) || { name: k, count: 0, sum: 0, vat: 0 };
-      g.count++; g.sum += p.cost; g.vat += p.costVat; suppliers.set(k, g);
-    });
+      g.count++; g.sum += l.cost; g.vat += l.vatAmt; suppliers.set(k, g);
+    }));
     const profit = h("section", { class: "profit" },
       h("div", { class: "profit-cards" },
         h("div", { class: "pc" }, h("span", { class: "lbl", text: "Príjem bez DPH" }), h("strong", { text: money(total) })),
@@ -914,10 +926,10 @@ main { padding-bottom: 40px; }
         h("tbody", {}, costRows.map(({ e, p }) => h("tr", { class: "click", onclick: () => openEditor(e.id) },
           h("td", { class: "mono", text: rangeText(e) }),
           h("td", { text: e.title }),
-          h("td", { text: p.supplierName || "–" }),
+          h("td", { text: p.sups.map(l => (l.name || "bez mena") + (p.sups.length > 1 ? " " + money(l.cost) : "")).join(", ") }),
           h("td", { class: "n", text: p.amount != null ? money(p.amount) : "–" }),
           h("td", { class: "n", text: money(p.cost) }),
-          h("td", { class: "n", text: p.costVatRate ? money(p.costVat) : "0 %" }),
+          h("td", { class: "n", text: p.costVat ? money(p.costVat) : "0 %" }),
           h("td", { class: "n", text: money(p.cost + p.costVat) }),
           h("td", { class: "n", text: p.amount != null ? money(p.amount - p.cost) : "–" }),
         ))),
@@ -1013,20 +1025,40 @@ main { padding-bottom: 40px; }
     const payQtyField = h("div", { class: "field" }, payQtyLbl, payQty);
     const payExtra = h("input", { id: "f-payextra", type: "text", inputmode: "decimal", placeholder: "0,00", "aria-label": "Iné, extra suma" });
     const payExtraNote = h("input", { id: "f-payextranote", type: "text", maxlength: "80", placeholder: "za čo, napr. cestovné, príplatok", "aria-label": "Za čo je extra suma" });
-    const supNames = [...new Set([...state.events.values()].map(e => e.work && e.work.supplierName).filter(Boolean))].sort((a, b) => a.localeCompare(b, "sk"));
+    const supNames = [...new Set([...state.events.values()].flatMap(e => supLines(e.work).map(l => l.name)).filter(Boolean))].sort((a, b) => a.localeCompare(b, "sk"));
     const supList = h("datalist", { id: "sup-names" }, supNames.map(n => h("option", { value: n })));
-    const paySup = h("input", { id: "f-supcost", type: "text", inputmode: "decimal", placeholder: "0,00", "aria-label": "Suma pre dodávateľa" });
-    const paySupName = h("input", { id: "f-supname", type: "text", maxlength: "80", list: "sup-names", placeholder: "komu, napr. Peter – svetlá", "aria-label": "Dodávateľ" });
-    const supVatBox = h("div", { class: "seg vat-seg", role: "group", "aria-label": "DPH dodávateľa" });
-    function drawSupVat() {
-      const cur = draft.work && Number(draft.work.supplierVat) === 23 ? 23 : 0;
-      supVatBox.replaceChildren(...[0, 23].map(v => h("button", { type: "button", id: "f-supvat-" + v, "aria-pressed": String(cur === v),
-        onclick: () => { if (draft.work) { draft.work.supplierVat = v; drawSupVat(); drawPay(); } }, text: v + " %" })));
+    const supRowsBox = h("div", { class: "sup-rows" });
+    const supAddBtn = h("button", { class: "ghost sup-add", type: "button", text: "+ Pridať dodávateľa" });
+    const paySupRow = h("div", { class: "pay-sup" },
+      h("span", { class: "lbl", text: "Vyplatiť dodávateľom (bez DPH)" }), supRowsBox, supAddBtn, supList);
+    let supLinesDraft = [];
+    function lastSupVat(name) {
+      const n = name.trim().toLowerCase(); if (!n) return null;
+      const prev = [...state.events.values()].filter(e => e.id !== id && supLines(e.work).some(l => l.name.toLowerCase() === n)).sort((a, b) => b.date.localeCompare(a.date))[0];
+      return prev ? supLines(prev.work).find(l => l.name.toLowerCase() === n).vat : null;
     }
-    const supVatRow = h("div", { class: "vat-row" }, h("span", { class: "lbl", text: "DPH dodávateľa" }), supVatBox, h("span", { class: "hint", text: "suma dodávateľovi je bez DPH" }));
-    const paySupRow = h("div", { class: "pay-extra pay-sup" },
-      h("div", { class: "field" }, h("label", { for: "f-supcost", text: "Vyplatiť dodávateľovi" }), h("div", { class: "money-in" }, paySup, h("span", { class: "per", text: "€" }))),
-      h("div", { class: "field" }, h("label", { for: "f-supname", text: "Komu" }), paySupName, supList));
+    function drawSupRows() {
+      supRowsBox.replaceChildren(...supLinesDraft.map((l, i) => {
+        const cost = h("input", { id: "f-supcost-" + i, type: "text", inputmode: "decimal", placeholder: "0,00", "aria-label": "Suma pre dodávateľa " + (i + 1),
+          value: l.cost ? Number(l.cost).toFixed(2).replace(".", ",") : (l.costText || "") });
+        const name = h("input", { id: "f-supname-" + i, type: "text", maxlength: "80", list: "sup-names", placeholder: "komu, napr. Peter – svetlá", "aria-label": "Dodávateľ " + (i + 1), value: l.name });
+        const vat = h("div", { class: "seg vat-seg", role: "group", "aria-label": "DPH dodávateľa " + (i + 1) });
+        const drawV = () => vat.replaceChildren(...[0, 23].map(v => h("button", { type: "button", id: "f-supvat-" + i + "-" + v, "aria-pressed": String(l.vat === v),
+          onclick: () => { l.vat = v; drawV(); drawPay(); }, text: v + " %" })));
+        drawV();
+        cost.addEventListener("input", () => { l.costText = cost.value; l.cost = toNum(cost.value) || 0; drawPay(); });
+        name.addEventListener("input", () => { l.name = name.value; });
+        name.addEventListener("change", () => { const v = lastSupVat(name.value); if (v !== null) { l.vat = v; drawV(); drawPay(); } });
+        return h("div", { class: "sup-line" },
+          h("div", { class: "money-in" }, cost, h("span", { class: "per", text: "€" })),
+          name, vat,
+          h("button", { class: "x", type: "button", "aria-label": "Odstrániť dodávateľa " + (i + 1), onclick: () => { supLinesDraft.splice(i, 1); drawSupRows(); drawPay(); }, text: "×" }));
+      }));
+    }
+    supAddBtn.addEventListener("click", () => {
+      supLinesDraft.push({ name: "", cost: 0, vat: 0 }); drawSupRows();
+      setTimeout(() => { const el = document.getElementById("f-supcost-" + (supLinesDraft.length - 1)); if (el) el.focus(); }, 20);
+    });
     const vatBox = h("div", { class: "seg vat-seg", role: "group", "aria-label": "DPH" });
     function drawVat() {
       const cur = draft.work && Number(draft.work.vat) === 23 ? 23 : 0;
@@ -1049,8 +1081,8 @@ main { padding-bottom: 40px; }
       draft.work.qty = draft.work.type === "task" || payQty.value.trim() === "" ? null : toNum(payQty.value);
       draft.work.extra = draft.work.type === "task" || payExtra.value.trim() === "" ? 0 : (toNum(payExtra.value) || 0);
       draft.work.extraNote = payExtraNote.value;
-      draft.work.supplier = paySup.value.trim() === "" ? 0 : (toNum(paySup.value) || 0);
-      draft.work.supplierName = paySupName.value;
+      draft.work.suppliers = supLinesDraft.map(l => ({ name: l.name || "", cost: l.cost || 0, vat: l.vat === 23 ? 23 : 0 }));
+      delete draft.work.supplier; delete draft.work.supplierName; delete draft.work.supplierVat;
     }
     function drawPay() {
       payBox.hidden = !draft.work;
@@ -1068,9 +1100,9 @@ main { padding-bottom: 40px; }
       payQty.placeholder = auto == null ? "zadaj" : num(auto) + " (z času)";
       const p = payOf(ev);
       supOut.replaceChildren();
-      supVatRow.hidden = !(p && p.cost);
-      if (p && p.cost) supOut.append(h("span", { class: "hint", text: "Dodávateľovi " + money(p.cost) + " bez DPH" +
-        (p.costVatRate ? " + DPH " + p.costVatRate + " % " + money(p.costVat) + " = " + money(p.cost + p.costVat) + " s DPH" : "") +
+      supAddBtn.textContent = supLinesDraft.length ? "+ Pridať ďalšieho dodávateľa" : "+ Pridať dodávateľa";
+      if (p && p.cost) supOut.append(h("span", { class: "hint", text: (p.sups.length > 1 ? "Dodávateľom spolu " : "Dodávateľovi ") + money(p.cost) + " bez DPH" +
+        (p.costVat ? " + DPH " + money(p.costVat) + " = " + money(p.cost + p.costVat) + " s DPH" : "") +
         (p.amount != null ? " · zisk z akcie " + money(p.amount - p.cost) + " bez DPH" : "") + ". Do súčtu miezd sa neodpočítava." }));
       let msg = null;
       if (p && p.rate == null) msg = task ? "Zadaj sumu za túto úlohu. Môžeš ju doplniť aj neskôr." : "Zadaj sadzbu. Môžeš ju doplniť aj neskôr.";
@@ -1091,9 +1123,8 @@ main { padding-bottom: 40px; }
       payQty.value = draft.work.qty == null ? "" : String(draft.work.qty).replace(".", ",");
       payExtra.value = Number(draft.work.extra) ? Number(draft.work.extra).toFixed(2).replace(".", ",") : "";
       payExtraNote.value = draft.work.extraNote || "";
-      paySup.value = Number(draft.work.supplier) > 0 ? Number(draft.work.supplier).toFixed(2).replace(".", ",") : "";
-      paySupName.value = draft.work.supplierName || "";
-      drawSupVat();
+      supLinesDraft = supLines(draft.work).map(l => ({ ...l }));
+      drawSupRows();
     }
     function lastVatFor(wpId) {
       // reuse the VAT setting of the latest event with this workplace
@@ -1119,14 +1150,7 @@ main { padding-bottom: 40px; }
       const w = state.workplaces.get(wpSel.value);
       if (w) useWorkplace(w);
     });
-    [payType, payRate, payQty, payExtra, paySup].forEach(el => el.addEventListener("input", drawPay));
-    // reuse the VAT setting last used with the same supplier
-    paySupName.addEventListener("change", () => {
-      if (!draft.work) return;
-      const n = paySupName.value.trim().toLowerCase();
-      const prev = [...state.events.values()].filter(e => e.id !== id && e.work && (e.work.supplierName || "").toLowerCase() === n).sort((a, b) => b.date.localeCompare(a.date))[0];
-      if (prev) { draft.work.supplierVat = Number(prev.work.supplierVat) === 23 ? 23 : 0; drawSupVat(); drawPay(); }
-    });
+    [payType, payRate, payQty, payExtra].forEach(el => el.addEventListener("input", drawPay));
     payType.addEventListener("change", drawPay);
     [date, endDate, time, end].forEach(el => el.addEventListener("change", drawPay));
     payBox.append(
@@ -1139,7 +1163,6 @@ main { padding-bottom: 40px; }
       vatRow,
       payOut,
       paySupRow,
-      supVatRow,
       supOut,
     );
     fillWp(); loadPayInputs(); drawVat(); drawPay();
@@ -1265,7 +1288,8 @@ main { padding-bottom: 40px; }
       draft.endDate = endD === draft.date ? "" : endD;
       syncWorkFromInputs();
       if (draft.work && payRate.value.trim() !== "" && (toNum(payRate.value) === null || toNum(payRate.value) < 0)) { err.textContent = "Sumu zadaj ako číslo, napr. 12,50, alebo ju nechaj prázdnu."; err.hidden = false; payRate.focus(); return; }
-      if (draft.work && paySup.value.trim() !== "" && (toNum(paySup.value) === null || toNum(paySup.value) < 0)) { err.textContent = "Sumu pre dodávateľa zadaj ako číslo, napr. 80."; err.hidden = false; paySup.focus(); return; }
+      const badSup = supLinesDraft.findIndex(l => (l.costText || "").trim() !== "" && (toNum(l.costText) === null || toNum(l.costText) < 0));
+      if (draft.work && badSup >= 0) { err.textContent = "Sumu pre dodávateľa zadaj ako číslo, napr. 80."; err.hidden = false; document.getElementById("f-supcost-" + badSup).focus(); return; }
       if (draft.work && payExtra.value.trim() !== "" && toNum(payExtra.value) === null) { err.textContent = "Sumu v poli Iné zadaj ako číslo, napr. 25 alebo -10."; err.hidden = false; payExtra.focus(); return; }
       if (draft.work && payQty.value.trim() !== "" && (toNum(payQty.value) === null || toNum(payQty.value) < 0)) { err.textContent = "Množstvo zadaj ako číslo, napr. 7,5."; err.hidden = false; payQty.focus(); return; }
       if (busyUploads) { err.textContent = "Počkaj, kým sa dokončí nahrávanie príloh."; err.hidden = false; return; }
