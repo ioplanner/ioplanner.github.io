@@ -166,6 +166,12 @@ header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; b
 .money-in input { flex: 1; min-width: 0; }
 .per { color: var(--muted); font-size: .8rem; white-space: nowrap; }
 .sup-out .hint { display: block; }
+.vat-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.vat-seg button { padding: 4px 12px; }
+.vat-line { color: var(--muted); }
+.vat-line strong { color: var(--ink); font-family: var(--f-display); }
+.vat-sum { color: var(--muted); font-size: .9rem; font-variant-numeric: tabular-nums; }
+.vat-sum b { color: var(--ink); }
 .pay-sup { border-top: 1px dashed var(--line); padding-top: 8px; }
 .profit { display: flex; flex-direction: column; gap: 10px; }
 .profit-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
@@ -435,6 +441,7 @@ main { padding-bottom: 40px; }
         rate: ev.work.rate === null || ev.work.rate === undefined || ev.work.rate === "" ? null : Number(ev.work.rate), qty: ev.work.qty === null || ev.work.qty === "" || ev.work.qty === undefined ? null : Number(ev.work.qty),
         extra: ev.work.type !== "task" && Number(ev.work.extra) ? Number(ev.work.extra) : 0,
         extraNote: ev.work.type !== "task" && Number(ev.work.extra) ? (ev.work.extraNote || "").trim() : "",
+        vat: Number(ev.work.vat) === 23 ? 23 : 0,
         supplier: Number(ev.work.supplier) > 0 ? Math.round(Number(ev.work.supplier) * 100) / 100 : 0,
         supplierName: Number(ev.work.supplier) > 0 ? (ev.work.supplierName || "").trim() : "",
       } : null,
@@ -501,6 +508,13 @@ main { padding-bottom: 40px; }
     const cost = Number(w.supplier) > 0 ? Number(w.supplier) : 0;   // paid out to a supplier; only used for profit
     return { qty, auto, rate, extra, extraNote: w.extraNote || "", unit: RATE[w.type].unit, base, cost, supplierName: w.supplierName || "",
       amount: base == null ? null : Math.round((base + extra) * 100) / 100 };
+  }
+  // VAT on top of the (net) amount
+  function vatOf(p, w) {
+    const rate = w && Number(w.vat) === 23 ? 23 : 0;
+    if (!p || p.amount == null) return { rate, vat: null, gross: null };
+    const vat = Math.round(p.amount * rate) / 100;
+    return { rate, vat, gross: Math.round((p.amount + vat) * 100) / 100 };
   }
   async function saveWorkplace(w) {
     // rate 0 = not agreed yet (entered on each event instead)
@@ -809,6 +823,9 @@ main { padding-bottom: 40px; }
     if (state.payScope === "done") evs = evs.filter(e => e.status === "done");
     const rows = evs.map(e => ({ e, p: payOf(e) }));
     const total = rows.reduce((a, r) => a + (r.p && r.p.amount != null ? r.p.amount : 0), 0);
+    rows.forEach(r => { r.v = vatOf(r.p, r.e.work); });
+    const vatTotal = Math.round(rows.reduce((a, r) => a + (r.v.vat || 0), 0) * 100) / 100;
+    const grossTotal = Math.round((total + vatTotal) * 100) / 100;
     const missing = rows.filter(r => !r.p || r.p.amount == null);
 
     const tools = h("div", { class: "board-tools" },
@@ -824,7 +841,8 @@ main { padding-bottom: 40px; }
     const groups = new Map();
     rows.forEach(({ e, p }) => {
       const k = e.work.wp || ("name:" + e.work.name);
-      const g = groups.get(k) || { name: e.work.name, count: 0, qty: {}, amount: 0 };
+      const g = groups.get(k) || { name: e.work.name, count: 0, qty: {}, amount: 0, vat: 0 };
+      const v = vatOf(p, e.work); if (v.vat) g.vat += v.vat;
       g.count++;
       if (p && p.qty != null) g.qty[p.unit] = (g.qty[p.unit] || 0) + p.qty;
       if (p && p.amount != null) g.amount += p.amount;
@@ -836,31 +854,36 @@ main { padding-bottom: 40px; }
       h("div", { class: "pay-total" },
         h("span", { class: "lbl", text: state.payScope === "done" ? "Spolu za hotové akcie" : "Spolu za mesiac" }),
         h("strong", { text: money(total) }),
+        h("span", { class: "vat-sum" }, "bez DPH · DPH " + money(vatTotal) + " · ", h("b", { text: money(grossTotal) + " s DPH" })),
         h("span", { class: "hint", text: rows.length + " " + (rows.length === 1 ? "akcia" : rows.length >= 2 && rows.length <= 4 ? "akcie" : "akcií") + " s pracovným miestom" }),
       ),
       missing.length ? h("p", { class: "warn", text: "Pri " + missing.length + " " + (missing.length === 1 ? "akcii" : "akciách") + " chýba suma, sadzba alebo hodiny, do súčtu sa nezapočítali. Klikni na akciu nižšie a doplň ich." }) : null,
     );
 
     const byWp = gList.length ? h("div", { class: "tbl-wrap" }, h("table", { class: "tbl" },
-      h("thead", {}, h("tr", {}, h("th", { text: "Pracovné miesto" }), h("th", { class: "n", text: "Akcie" }), h("th", { class: "n", text: "Množstvo" }), h("th", { class: "n", text: "Suma" }))),
+      h("thead", {}, h("tr", {}, h("th", { text: "Pracovné miesto" }), h("th", { class: "n", text: "Akcie" }), h("th", { class: "n", text: "Množstvo" }), h("th", { class: "n", text: "Bez DPH" }), h("th", { class: "n", text: "DPH" }), h("th", { class: "n", text: "S DPH" }))),
       h("tbody", {}, gList.map(g => h("tr", {},
         h("td", { text: g.name }),
         h("td", { class: "n", text: g.count }),
         h("td", { class: "n", text: Object.keys(g.qty).map(u => num(g.qty[u]) + " " + u).join(", ") || "–" }),
         h("td", { class: "n", text: money(g.amount) }),
+        h("td", { class: "n", text: money(g.vat) }),
+        h("td", { class: "n", text: money(g.amount + g.vat) }),
       ))),
-      h("tfoot", {}, h("tr", {}, h("td", { text: "Spolu" }), h("td", { class: "n", text: rows.length }), h("td", {}), h("td", { class: "n", text: money(total) }))),
+      h("tfoot", {}, h("tr", {}, h("td", { text: "Spolu" }), h("td", { class: "n", text: rows.length }), h("td", {}), h("td", { class: "n", text: money(total) }), h("td", { class: "n", text: money(vatTotal) }), h("td", { class: "n", text: money(grossTotal) }))),
     )) : h("p", { class: "empty", text: "V tomto mesiaci nie sú žiadne akcie s pracovným miestom. Pracovné miesto vyberieš v detaile akcie pod názvom." });
 
     const detail = rows.length ? h("div", { class: "tbl-wrap" }, h("table", { class: "tbl" },
-      h("thead", {}, h("tr", {}, h("th", { text: "Dátum" }), h("th", { text: "Akcia" }), h("th", { text: "Pracovné miesto" }), h("th", { class: "n", text: "Výpočet" }), h("th", { class: "n", text: "Suma" }))),
-      h("tbody", {}, rows.map(({ e, p }) => h("tr", { class: "click", onclick: () => openEditor(e.id) },
+      h("thead", {}, h("tr", {}, h("th", { text: "Dátum" }), h("th", { text: "Akcia" }), h("th", { text: "Pracovné miesto" }), h("th", { class: "n", text: "Výpočet" }), h("th", { class: "n", text: "Bez DPH" }), h("th", { class: "n", text: "DPH" }), h("th", { class: "n", text: "S DPH" }))),
+      h("tbody", {}, rows.map(({ e, p, v }) => h("tr", { class: "click", onclick: () => openEditor(e.id) },
         h("td", { class: "mono", text: rangeText(e) }),
         h("td", {}, e.title, e.status === "done" ? h("span", { class: "pill", dataset: { s: "done" }, text: "Hotovo" }) : null),
         h("td", { text: e.work.name }),
         h("td", { class: "n", text: !p ? "–" : p.rate == null ? (e.work.type === "task" ? "chýba suma" : "chýba sadzba") : p.qty == null ? "chýbajú hodiny" : e.work.type === "task" ? "úloha" :
           num(p.qty) + " " + p.unit + " × " + money(p.rate) + (p.extra ? (p.extra > 0 ? " + " : " − ") + money(Math.abs(p.extra)) + " iné" + (p.extraNote ? " (" + p.extraNote + ")" : "") : "") }),
         h("td", { class: "n", text: p && p.amount != null ? money(p.amount) : "–" }),
+        h("td", { class: "n", text: v.vat != null ? (v.rate ? money(v.vat) : "0 %") : "–" }),
+        h("td", { class: "n", text: v.gross != null ? money(v.gross) : "–" }),
       ))),
     )) : null;
 
@@ -876,13 +899,13 @@ main { padding-bottom: 40px; }
     });
     const profit = h("section", { class: "profit" },
       h("div", { class: "profit-cards" },
-        h("div", { class: "pc" }, h("span", { class: "lbl", text: "Príjem" }), h("strong", { text: money(total) })),
+        h("div", { class: "pc" }, h("span", { class: "lbl", text: "Príjem bez DPH" }), h("strong", { text: money(total) })),
         h("div", { class: "pc" }, h("span", { class: "lbl", text: "Dodávatelia" }), h("strong", { class: "neg", text: "− " + money(costTotal) })),
         h("div", { class: "pc main" }, h("span", { class: "lbl", text: "Zisk" }), h("strong", { text: money(total - costTotal) })),
       ),
       profitIncomplete ? h("p", { class: "warn", text: "Pri " + profitIncomplete + " " + (profitIncomplete === 1 ? "akcii" : "akciách") + " s dodávateľom chýba suma príjmu, zisk je preto nižší, ako bude." }) : null,
       costRows.length ? h("div", { class: "tbl-wrap" }, h("table", { class: "tbl" },
-        h("thead", {}, h("tr", {}, h("th", { text: "Dátum" }), h("th", { text: "Akcia" }), h("th", { text: "Dodávateľ" }), h("th", { class: "n", text: "Príjem" }), h("th", { class: "n", text: "Dodávateľovi" }), h("th", { class: "n", text: "Zisk" }))),
+        h("thead", {}, h("tr", {}, h("th", { text: "Dátum" }), h("th", { text: "Akcia" }), h("th", { text: "Dodávateľ" }), h("th", { class: "n", text: "Príjem bez DPH" }), h("th", { class: "n", text: "Dodávateľovi" }), h("th", { class: "n", text: "Zisk" }))),
         h("tbody", {}, costRows.map(({ e, p }) => h("tr", { class: "click", onclick: () => openEditor(e.id) },
           h("td", { class: "mono", text: rangeText(e) }),
           h("td", { text: e.title }),
@@ -927,7 +950,7 @@ main { padding-bottom: 40px; }
       summary,
       h("h3", { class: "sec", text: "Podľa pracovného miesta" }), byWp,
       detail ? h("h3", { class: "sec", text: "Jednotlivé akcie" }) : null, detail,
-      h("h3", { class: "sec", text: "Zisk po vyplatení dodávateľov" }), profit,
+      h("h3", { class: "sec", text: "Zisk po vyplatení dodávateľov (bez DPH)" }), profit,
       h("section", { class: "agenda wp-manage" },
         h("div", { class: "agenda-head" }, h("h2", { text: "Pracovné miesta" })),
         h("p", { class: "hint", text: "Odberatelia s dohodnutou sadzbou. Archivované sa už neponúkajú pri nových akciách, staré akcie ostanú." }),
@@ -990,6 +1013,13 @@ main { padding-bottom: 40px; }
     const paySupRow = h("div", { class: "pay-extra pay-sup" },
       h("div", { class: "field" }, h("label", { for: "f-supcost", text: "Vyplatiť dodávateľovi" }), h("div", { class: "money-in" }, paySup, h("span", { class: "per", text: "€" }))),
       h("div", { class: "field" }, h("label", { for: "f-supname", text: "Komu" }), paySupName, supList));
+    const vatBox = h("div", { class: "seg vat-seg", role: "group", "aria-label": "DPH" });
+    function drawVat() {
+      const cur = draft.work && Number(draft.work.vat) === 23 ? 23 : 0;
+      vatBox.replaceChildren(...[0, 23].map(v => h("button", { type: "button", id: "f-vat-" + v, "aria-pressed": String(cur === v),
+        onclick: () => { if (draft.work) { draft.work.vat = v; drawVat(); drawPay(); } }, text: v + " %" })));
+    }
+    const vatRow = h("div", { class: "vat-row" }, h("span", { class: "lbl", text: "DPH" }), vatBox, h("span", { class: "hint", text: "suma vyššie je bez DPH" }));
     const payExtraRow = h("div", { class: "pay-extra" },
       h("div", { class: "field" }, h("label", { for: "f-payextra", text: "Iné (+)" }), h("div", { class: "money-in" }, payExtra, h("span", { class: "per", text: "€" }))),
       h("div", { class: "field" }, h("label", { for: "f-payextranote", text: "Za čo" }), payExtraNote));
@@ -1029,8 +1059,13 @@ main { padding-bottom: 40px; }
       if (p && p.rate == null) msg = task ? "Zadaj sumu za túto úlohu. Môžeš ju doplniť aj neskôr." : "Zadaj sadzbu. Môžeš ju doplniť aj neskôr.";
       else if (p && p.qty == null) msg = draft.work.type === "hour" ? "Zadaj čas od – do alebo počet hodín." : "Zadaj množstvo.";
       payOut.replaceChildren(msg ? h("span", { class: "hint", text: msg })
-        : task ? h("span", {}, "Suma: ", h("strong", { text: money(p.amount) }))
-        : h("span", {}, num(p.qty) + " " + p.unit + " × " + money(p.rate) + (p.extra ? (p.extra > 0 ? " + " : " − ") + money(Math.abs(p.extra)) + " iné" : "") + " = ", h("strong", { text: money(p.amount) })));
+        : task ? h("span", {}, "Suma: ", h("strong", { text: money(p.amount) }), vatTail(p))
+        : h("span", {}, num(p.qty) + " " + p.unit + " × " + money(p.rate) + (p.extra ? (p.extra > 0 ? " + " : " − ") + money(Math.abs(p.extra)) + " iné" : "") + " = ", h("strong", { text: money(p.amount) }), vatTail(p)));
+    }
+    function vatTail(p) {
+      const v = vatOf(p, draft.work);
+      if (!v.rate) return h("span", { class: "hint", text: " bez DPH" });
+      return h("span", { class: "vat-line" }, " bez DPH + DPH " + v.rate + " % " + money(v.vat) + " = ", h("strong", { text: money(v.gross) }), " s DPH");
     }
     function loadPayInputs() {
       if (!draft.work) return;
@@ -1042,8 +1077,14 @@ main { padding-bottom: 40px; }
       paySup.value = Number(draft.work.supplier) > 0 ? Number(draft.work.supplier).toFixed(2).replace(".", ",") : "";
       paySupName.value = draft.work.supplierName || "";
     }
+    function lastVatFor(wpId) {
+      // reuse the VAT setting of the latest event with this workplace
+      const prev = [...state.events.values()].filter(e => e.work && e.work.wp === wpId).sort((a, b) => b.date.localeCompare(a.date))[0];
+      return prev && Number(prev.work.vat) === 23 ? 23 : 0;
+    }
     function useWorkplace(w) {
-      draft.work = { wp: w.id, name: w.name, type: w.rate_type, rate: Number(w.rate) > 0 ? Number(w.rate) : null, qty: null };
+      draft.work = { wp: w.id, name: w.name, type: w.rate_type, rate: Number(w.rate) > 0 ? Number(w.rate) : null, qty: null, vat: lastVatFor(w.id) };
+      drawVat();
       loadPayInputs(); drawPay();
       if (draft.work.rate == null) setTimeout(() => payRate.focus(), 30);
     }
@@ -1070,11 +1111,12 @@ main { padding-bottom: 40px; }
         payQtyField,
       ),
       payExtraRow,
+      vatRow,
       payOut,
       paySupRow,
       supOut,
     );
-    fillWp(); loadPayInputs(); drawPay();
+    fillWp(); loadPayInputs(); drawVat(); drawPay();
     // keep the end on or after the start when the start date moves
     let lastStart = date.value;
     date.addEventListener("change", () => {

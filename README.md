@@ -67,6 +67,7 @@ Zmeny: otvor súbor na GitHube → ceruzka → uprav → **Commit changes**. Str
 - **Úkolová sadzba:** sumu zadáš pri každej akcii zvlášť (*Suma za túto úlohu*). Ak má pracovné miesto vyplnenú obvyklú sumu, predvyplní sa a dá sa prepísať.
 - Množstvo sa doplní samo: hodiny z času od – do, dni z dátumov. Dá sa prepísať, napr. po odpočítaní prestávky.
 - **Iné (+):** pri hodinovej a dennej sadzbe môžeš k akcii pridať extra sumu (cestovné, príplatok…), ktorá sa pripočíta k výpočtu zo sadzby. Záporná suma sa odpočíta. Do poľa *Za čo* si poznačíš dôvod.
+- **DPH:** pri sume zvolíš **0 %** alebo **23 %**. Zadaná suma je bez DPH, diár k nej dopočíta DPH a sumu s DPH. Pri ďalšej akcii pre to isté pracovné miesto sa predvolí naposledy použitá DPH. V pohľade **Mzdy** vidíš súčty bez DPH, DPH a s DPH; zisk sa počíta zo súm bez DPH.
 - **Vyplatiť dodávateľovi:** pri akcii zadáš sumu, ktorú platíš dodávateľovi, a komu. Do súčtu miezd sa **neodpočítava**. V pohľade **Mzdy** je zvlášť sekcia **Zisk po vyplatení dodávateľov**: príjem − dodávatelia = zisk, zoznam akcií s dodávateľom a súčty podľa dodávateľov.
 - Akcie, pri ktorých chýba suma, sadzba alebo hodiny, sa do súčtu nezapočítajú a pohľad **Mzdy** na ne upozorní.
 - Sadzba sa uloží pri akcii, takže neskoršia zmena sadzby nezmení staré akcie. Pri akcii sa dá upraviť aj ručne.
