@@ -11,7 +11,7 @@ Súkromný kalendár s mesačným a týždenným pohľadom, kanban nástenkou (*
 
 ## 1. Supabase (databáza)
 
-1. V projekte otvor **SQL Editor** → **New query**, vlož celý obsah súboru **supabase.sql** a stlač **Run**. Má sa ukázať *Success*. To isté potom urob so súbormi **supabase-prilohy.sql** (prílohy PDF) **supabase-viacdnove.sql** (akcie cez viac dní) a **supabase-mzdy.sql** (pracovné miesta a mzdy) a **supabase-loga.sql** (logá).
+1. V projekte otvor **SQL Editor** → **New query**, vlož celý obsah súboru **supabase.sql** a stlač **Run**. Má sa ukázať *Success*. To isté potom urob so súbormi **supabase-prilohy.sql** (prílohy PDF) **supabase-viacdnove.sql** (akcie cez viac dní) a **supabase-mzdy.sql** (pracovné miesta a mzdy) a **supabase-dodavatelia.sql** (zoznam dodávateľov a logá; obsahuje aj supabase-loga.sql).
 2. **Vytvor si prihlasovací účet:** **Authentication** → **Users** → **Add user** → **Create new user**. Zadaj e-mail a heslo a zaškrtni **Auto Confirm User**.
 3. **Zakáž registráciu cudzím:** **Authentication** → *Sign In / Providers* → vypni **Allow new users to sign up**.
 4. **Údaje na pripojenie:** **Project Settings** → **API Keys** → verejný kľúč **publishable** (`sb_publishable_…`), nie *secret* / *service_role*.
@@ -48,7 +48,7 @@ Zmeny: otvor súbor na GitHube → ceruzka → uprav → **Commit changes**. Str
 | „Úložisko na prílohy ešte neexistuje“ alebo „Databáza ešte nepozná prílohy“ | spusti supabase-prilohy.sql |
 | „Databáza ešte nepozná viacdňové akcie“ | spusti supabase-viacdnove.sql |
 | „Databáza ešte nepozná pracovné miesta“ | spusti supabase-mzdy.sql |
-| „Databáza ešte nepozná logá“ | spusti supabase-loga.sql |
+| „Databáza ešte nepozná zoznam dodávateľov a logá“ | spusti supabase-dodavatelia.sql |
 | „chýba tabuľka pre kalendár“ | spusti supabase-kalendar.sql |
 | Kalendár Apple hlási chybu alebo „Vyskúšať adresu“ ukáže *Missing authorization header* | vo funkcii **swift-service** vypni **Verify JWT** |
 | „Vyskúšať adresu“ ukáže *Function not found* | funkcia ešte nie je nasadená (Kalendár Apple, krok 2) |
@@ -74,7 +74,8 @@ Zmeny: otvor súbor na GitHube → ceruzka → uprav → **Commit changes**. Str
 - Množstvo sa doplní samo: hodiny z času od – do, dni z dátumov. Dá sa prepísať, napr. po odpočítaní prestávky.
 - **Iné (+):** pri hodinovej a dennej sadzbe môžeš k akcii pridať extra sumu (cestovné, príplatok…), ktorá sa pripočíta k výpočtu zo sadzby. Záporná suma sa odpočíta. Do poľa *Za čo* si poznačíš dôvod.
 - **DPH:** pri sume zvolíš **0 %** alebo **23 %**. Zadaná suma je bez DPH, diár k nej dopočíta DPH a sumu s DPH. Pri ďalšej akcii pre to isté pracovné miesto sa predvolí naposledy použitá DPH. V pohľade **Mzdy** vidíš súčty bez DPH, DPH a s DPH; zisk sa počíta zo súm bez DPH.
-- **Vyplatiť dodávateľom:** pri akcii cez *+ Pridať dodávateľa* pridáš ľubovoľný počet dodávateľov, každého so sumou, menom a vlastnou DPH. Do súčtu miezd sa **neodpočítava**. V pohľade **Mzdy** je zvlášť sekcia **Zisk po vyplatení dodávateľov**: príjem − dodávatelia = zisk, zoznam akcií s dodávateľom a súčty podľa dodávateľov. Aj pri dodávateľovi zvolíš **DPH 0 % alebo 23 %**: suma je bez DPH, diár ukáže DPH a sumu s DPH (pri rovnakom dodávateľovi sa predvolí naposledy použitá). Zisk sa počíta zo súm bez DPH.
+- **Dodávatelia** majú vlastný zoznam v *Mzdy → Dodávatelia* rovnako ako pracovné miesta: meno, logo, predvolená DPH, úprava a archivovanie. Mená zadané pri starších akciách sa dajú jedným klikom *Pridať do zoznamu*.
+- **Vyplatiť dodávateľom:** pri akcii cez *+ Pridať dodávateľa* pridáš ľubovoľný počet riadkov; dodávateľa **vyberieš zo zoznamu** (nového vytvoríš priamo tam cez *+ Nový dodávateľ…*), zadáš sumu a DPH sa predvolí podľa dodávateľa. Do súčtu miezd sa **neodpočítava**. V pohľade **Mzdy** je zvlášť sekcia **Zisk po vyplatení dodávateľov**: príjem − dodávatelia = zisk, zoznam akcií s dodávateľom a súčty podľa dodávateľov. Aj pri dodávateľovi zvolíš **DPH 0 % alebo 23 %**: suma je bez DPH, diár ukáže DPH a sumu s DPH (pri rovnakom dodávateľovi sa predvolí naposledy použitá). Zisk sa počíta zo súm bez DPH.
 - Akcie, pri ktorých chýba suma, sadzba alebo hodiny, sa do súčtu nezapočítajú a pohľad **Mzdy** na ne upozorní.
 - Sadzba sa uloží pri akcii, takže neskoršia zmena sadzby nezmení staré akcie. Pri akcii sa dá upraviť aj ručne.
 - Pohľad **Mzdy** (`#mzdy`): suma za mesiac, súčty podľa pracovných miest a zoznam akcií. Akcia patrí do mesiaca, v ktorom začína. Voľba *Len hotové* započíta iba akcie v stave Hotovo.

@@ -211,7 +211,10 @@ header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; b
 .wp-pick select { flex: 1; min-width: 0; }
 .wp-logo-box[hidden] { display: none; }
 .sup-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.sup-name input { flex: 1; min-width: 0; }
+.sup-name input, .sup-name select { flex: 1; min-width: 0; }
+.sup-block { display: flex; flex-direction: column; gap: 6px; }
+.new-sup[hidden] { display: none; }
+.loose { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
 .sup-cell { display: flex; flex-direction: column; gap: 4px; }
 .sup-row { grid-template-columns: minmax(0, 1fr) auto; }
 .pay-sum { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
@@ -575,14 +578,53 @@ main { padding-bottom: 40px; }
     draw();
     return box;
   }
-  async function saveSupplierLogo(name, logo) {
-    const k = supKey(name); if (!k) return;
-    const cur = state.suppliers.get(k);
-    const row = { id: cur ? cur.id : newId(), name: name.trim(), logo: logo || null };
-    if (!sb || !uid) { state.suppliers.set(k, row); saveLocalWp(); return; }
+  // supplier registry (like workplaces): name, logo, default VAT, archived
+  async function saveSupplier(r) {
+    const k = supKey(r.name); if (!k) throw "Zadaj meno dodávateľa.";
+    const clash = [...state.suppliers.values()].find(x => supKey(x.name) === k && x.id !== r.id);
+    if (clash) throw "Dodávateľ s menom „" + clash.name + "“ už v zozname je.";
+    const row = { id: r.id || newId(), name: r.name.trim() };
+    if (r.logo !== undefined) row.logo = r.logo || null;
+    if (r.vat !== undefined) row.vat = Number(r.vat) === 23 ? 23 : 0;
+    if (r.archived !== undefined) row.archived = !!r.archived;
+    const prev = [...state.suppliers.entries()].find(([, x]) => x.id === row.id);
+    const merged = { ...(prev ? prev[1] : {}), ...row };
+    if (!sb || !uid) { if (prev) state.suppliers.delete(prev[0]); state.suppliers.set(k, merged); saveLocalWp(); return merged; }
     const { error } = await sb.from("suppliers").upsert(row);
     if (error) throw friendly(error);
-    supMissing = false; state.suppliers.set(k, row);
+    supMissing = false;
+    if (prev) state.suppliers.delete(prev[0]);
+    state.suppliers.set(k, merged);
+    return merged;
+  }
+  async function saveSupplierLogo(name, logo) {
+    const cur = state.suppliers.get(supKey(name));
+    return saveSupplier({ id: cur ? cur.id : undefined, name, logo });
+  }
+  const activeSups = () => [...state.suppliers.values()].filter(x => !x.archived).sort((a, b) => a.name.localeCompare(b.name, "sk"));
+  function supForm(initial, onDone, onCancel) {
+    const r = initial ? { ...initial } : { name: "", vat: 0 };
+    const key = (r.id || "new").slice(0, 8);
+    const name = h("input", { id: "sp-name-" + key, type: "text", value: r.name, maxlength: "120", placeholder: "Meno dodávateľa, napr. Peter – svetlá", "aria-label": "Meno dodávateľa" });
+    let vat = Number(r.vat) === 23 ? 23 : 0;
+    const vatBox = h("div", { class: "seg vat-seg", role: "group", "aria-label": "Predvolená DPH" });
+    const drawV = () => vatBox.replaceChildren(...[0, 23].map(v => h("button", { type: "button", id: "sp-vat-" + key + "-" + v, "aria-pressed": String(vat === v), onclick: () => { vat = v; drawV(); }, text: v + " %" })));
+    drawV();
+    let logoChanged = false, newLogo = r.logo || null;
+    const logo = logoPicker("sp-logo-" + key, r.logo, v => { logoChanged = true; newLogo = v; });
+    const err = h("p", { class: "err", hidden: true });
+    const save = h("button", { class: "primary", type: "button", text: initial ? "Uložiť" : "Pridať dodávateľa" });
+    save.addEventListener("click", async () => {
+      if (!name.value.trim()) { err.textContent = "Zadaj meno dodávateľa."; err.hidden = false; name.focus(); return; }
+      save.disabled = true;
+      try { onDone(await saveSupplier({ id: r.id, name: name.value, vat, ...(logoChanged ? { logo: newLogo } : {}) })); }
+      catch (m) { err.textContent = m; err.hidden = false; save.disabled = false; }
+    });
+    setTimeout(() => { if (!initial) name.focus(); }, 30);
+    return h("div", { class: "wp-form" }, name, logo,
+      h("div", { class: "vat-row" }, h("span", { class: "lbl", text: "Predvolená DPH" }), vatBox),
+      err,
+      h("div", { class: "wp-actions" }, onCancel ? h("button", { class: "ghost", type: "button", onclick: onCancel, text: "Zrušiť" }) : null, save));
   }
   const activeWps = () => [...state.workplaces.values()].filter(w => !w.archived).sort((a, b) => a.name.localeCompare(b.name, "sk"));
   // quantity that follows from the event's own dates and times
@@ -880,7 +922,7 @@ main { padding-bottom: 40px; }
   }
   function friendly(e) {
     const msg = (e && (e.message || "")) + "";
-    if (/logo|suppliers/i.test(msg)) return "Databáza ešte nepozná logá. V Supabase spusti súbor supabase-loga.sql (pozri README).";
+    if (/logo|suppliers|'vat' column|'archived' column/i.test(msg)) return "Databáza ešte nepozná zoznam dodávateľov a logá. V Supabase spusti súbor supabase-dodavatelia.sql (pozri README).";
     if (/workplaces|'work' column/i.test(msg)) return "Databáza ešte nepozná pracovné miesta. V Supabase spusti súbor supabase-mzdy.sql (pozri README).";
     if (/end_date/i.test(msg)) return "Databáza ešte nepozná viacdňové akcie. V Supabase spusti súbor supabase-viacdnove.sql (pozri README).";
     if (/attachments/i.test(msg)) return "Databáza ešte nepozná prílohy. V Supabase spusti súbor supabase-prilohy.sql (pozri README).";
@@ -1072,6 +1114,12 @@ main { padding-bottom: 40px; }
 
   // ---------- Pay view ----------
   let wpEditing = null; // id of the workplace being edited in the list
+  let supEditing = null; // same for suppliers
+  function lastVatOfName(n) {
+    const k = supKey(n);
+    const prev = [...state.events.values()].filter(e => supLines(e.work).some(l => supKey(l.name) === k)).sort((a, b) => b.date.localeCompare(a.date))[0];
+    return prev ? supLines(prev.work).find(l => supKey(l.name) === k).vat : 0;
+  }
   function renderPay() {
     const c = state.cursor, y = c.getFullYear(), m = c.getMonth();
     periodEl.replaceChildren("Mzdy · " + MONTHS[m] + " ", h("span", { text: y }));
@@ -1206,18 +1254,36 @@ main { padding-bottom: 40px; }
       : h("button", { class: "ghost", type: "button", onclick: () => { wpEditing = "new"; render(); }, text: "+ Nové pracovné miesto" });
 
     // suppliers with logos: everyone used on an event plus saved ones
-    const supNamesAll = new Map();
-    [...state.events.values()].forEach(e => supLines(e.work).forEach(l => { if (l.name) supNamesAll.set(supKey(l.name), l.name); }));
-    state.suppliers.forEach((r, k) => supNamesAll.set(k, r.name));
     const supList = h("div", { class: "wp-list" });
-    [...supNamesAll.values()].sort((a, b) => a.localeCompare(b, "sk")).forEach(n => {
-      supList.append(h("div", { class: "wp-row sup-row" },
-        h("div", { class: "wp-main" }, h("strong", { class: "with-logo" }, logoEl(supLogo(n), "sm"), n)),
-        logoPicker("sup-logo-" + supKey(n).replace(/[^a-z0-9]/g, "").slice(0, 20) + "-" + supNamesAll.size, supLogo(n), async v => {
-          try { await saveSupplierLogo(n, v); toast(v ? "Logo uložené" : "Logo odstránené"); render(); } catch (m) { toast(m); }
-        })));
+    const registered = [...state.suppliers.values()].sort((a, b) => (!!a.archived - !!b.archived) || a.name.localeCompare(b.name, "sk"));
+    registered.forEach(r => {
+      if (supEditing === r.id) {
+        supList.append(supForm(r, () => { supEditing = null; render(); toast("Dodávateľ uložený"); }, () => { supEditing = null; render(); }));
+        return;
+      }
+      supList.append(h("div", { class: "wp-row" + (r.archived ? " archived" : "") },
+        h("div", { class: "wp-main" }, h("strong", { class: "with-logo" }, logoEl(r.logo, "sm"), r.name),
+          h("span", { class: "hint", text: "Predvolená DPH " + (Number(r.vat) === 23 ? "23 %" : "0 %") + (r.archived ? " · archivovaný" : "") })),
+        h("button", { class: "ghost", type: "button", onclick: () => { supEditing = r.id; render(); }, text: "Upraviť" }),
+        h("button", { class: "ghost", type: "button", onclick: async () => {
+          try { await saveSupplier({ id: r.id, name: r.name, archived: !r.archived }); render(); toast(r.archived ? "Dodávateľ obnovený" : "Dodávateľ archivovaný"); }
+          catch (m) { toast(m); }
+        }, text: r.archived ? "Obnoviť" : "Archivovať" })));
     });
-    if (!supNamesAll.size) supList.append(h("p", { class: "empty", text: "Dodávatelia sa sem pridajú sami, keď ich zadáš pri akcii." }));
+    if (!registered.length) supList.append(h("p", { class: "empty", text: "Zatiaľ nemáš žiadneho dodávateľa." }));
+    // names typed on older events that are not in the list yet
+    const loose = new Map();
+    [...state.events.values()].forEach(e => supLines(e.work).forEach(l => { if (l.name && !state.suppliers.has(supKey(l.name))) loose.set(supKey(l.name), l.name); }));
+    const looseBox = loose.size ? h("div", { class: "loose" },
+      h("p", { class: "hint", text: "Z predchádzajúcich akcií (zatiaľ nie sú v zozname):" }),
+      ...[...loose.values()].sort((a, b) => a.localeCompare(b, "sk")).map(n => h("div", { class: "wp-row sup-row" },
+        h("div", { class: "wp-main" }, h("strong", { text: n })),
+        h("button", { class: "ghost", type: "button", onclick: async () => {
+          try { await saveSupplier({ name: n, vat: lastVatOfName(n) }); render(); toast("Pridané do zoznamu"); } catch (m) { toast(m); }
+        }, text: "Pridať do zoznamu" })))) : null;
+    const supAddBox = supEditing === "new"
+      ? supForm(null, () => { supEditing = null; render(); toast("Dodávateľ pridaný"); }, () => { supEditing = null; render(); })
+      : h("button", { class: "ghost", type: "button", onclick: () => { supEditing = "new"; render(); }, text: "+ Nový dodávateľ" });
 
     viewEl.replaceChildren(...[
       tools,
@@ -1232,9 +1298,9 @@ main { padding-bottom: 40px; }
         list, addBox),
       h("section", { class: "agenda wp-manage" },
         h("div", { class: "agenda-head" }, h("h2", { text: "Dodávatelia" })),
-        h("p", { class: "hint", text: "Každý, komu niečo vyplácaš pri akciách. Tu im môžeš priradiť logo." }),
-        (supMissing || logoMissing) ? h("p", { class: "notice", text: "Logá sa zatiaľ nedajú uložiť do databázy. V Supabase spusti súbor supabase-loga.sql (pozri README)." }) : null,
-        supList),
+        h("p", { class: "hint", text: "Komu vyplácaš pri akciách. Pri akcii ich už len vyberieš zo zoznamu." }),
+        (supMissing || logoMissing) ? h("p", { class: "notice", text: "Zoznam dodávateľov sa zatiaľ nedá uložiť do databázy. V Supabase spusti súbor supabase-dodavatelia.sql (pozri README)." }) : null,
+        supList, supAddBox, looseBox),
     ].filter(Boolean));
   }
 
@@ -1288,12 +1354,11 @@ main { padding-bottom: 40px; }
     const payQtyField = h("div", { class: "field" }, payQtyLbl, payQty);
     const payExtra = h("input", { id: "f-payextra", type: "text", inputmode: "decimal", placeholder: "0,00", "aria-label": "Iné, extra suma" });
     const payExtraNote = h("input", { id: "f-payextranote", type: "text", maxlength: "80", placeholder: "za čo, napr. cestovné, príplatok", "aria-label": "Za čo je extra suma" });
-    const supNames = [...new Set([...state.events.values()].flatMap(e => supLines(e.work).map(l => l.name)).filter(Boolean))].sort((a, b) => a.localeCompare(b, "sk"));
-    const supList = h("datalist", { id: "sup-names" }, supNames.map(n => h("option", { value: n })));
+    const supList = null;
     const supRowsBox = h("div", { class: "sup-rows" });
     const supAddBtn = h("button", { class: "ghost sup-add", type: "button", text: "+ Pridať dodávateľa" });
     const paySupRow = h("div", { class: "pay-sup" },
-      h("span", { class: "lbl", text: "Vyplatiť dodávateľom (bez DPH)" }), supRowsBox, supAddBtn, supList);
+      h("span", { class: "lbl", text: "Vyplatiť dodávateľom (bez DPH)" }), supRowsBox, supAddBtn);
     let supLinesDraft = [];
     function lastSupVat(name) {
       const n = name.trim().toLowerCase(); if (!n) return null;
@@ -1304,20 +1369,41 @@ main { padding-bottom: 40px; }
       supRowsBox.replaceChildren(...supLinesDraft.map((l, i) => {
         const cost = h("input", { id: "f-supcost-" + i, type: "text", inputmode: "decimal", placeholder: "0,00", "aria-label": "Suma pre dodávateľa " + (i + 1),
           value: l.cost ? Number(l.cost).toFixed(2).replace(".", ",") : (l.costText || "") });
-        const name = h("input", { id: "f-supname-" + i, type: "text", maxlength: "80", list: "sup-names", placeholder: "komu, napr. Peter – svetlá", "aria-label": "Dodávateľ " + (i + 1), value: l.name });
+        const name = h("select", { id: "f-supname-" + i, "aria-label": "Dodávateľ " + (i + 1) });
+        const opts = [h("option", { value: "", text: "— vyber dodávateľa —" })];
+        activeSups().forEach(r => opts.push(h("option", { value: supKey(r.name), text: r.name })));
+        if (l.name && !activeSups().some(r => supKey(r.name) === supKey(l.name))) opts.push(h("option", { value: supKey(l.name), text: l.name + (state.suppliers.has(supKey(l.name)) ? " (archivovaný)" : "") }));
+        opts.push(h("option", { value: "__new", text: "+ Nový dodávateľ…" }));
+        name.replaceChildren(...opts);
+        name.value = l.name ? supKey(l.name) : "";
+        const newBox = h("div", { class: "new-sup", hidden: true });
         const vat = h("div", { class: "seg vat-seg", role: "group", "aria-label": "DPH dodávateľa " + (i + 1) });
         const drawV = () => vat.replaceChildren(...[0, 23].map(v => h("button", { type: "button", id: "f-supvat-" + i + "-" + v, "aria-pressed": String(l.vat === v),
           onclick: () => { l.vat = v; drawV(); drawPay(); }, text: v + " %" })));
         drawV();
         cost.addEventListener("input", () => { l.costText = cost.value; l.cost = toNum(cost.value) || 0; drawPay(); });
-        name.addEventListener("input", () => { l.name = name.value; });
-        name.addEventListener("change", () => { const lg = name.parentNode && name.parentNode.querySelector("img.logo"); const src = supLogo(name.value);
-          if (lg) lg.remove(); if (src) name.parentNode.prepend(logoEl(src, "sm"));
-          const v = lastSupVat(name.value); if (v !== null) { l.vat = v; drawV(); drawPay(); } });
-        return h("div", { class: "sup-line" },
-          h("div", { class: "money-in" }, cost, h("span", { class: "per", text: "€" })),
-          h("span", { class: "sup-name" }, logoEl(supLogo(l.name), "sm"), name), vat,
-          h("button", { class: "x", type: "button", "aria-label": "Odstrániť dodávateľa " + (i + 1), onclick: () => { supLinesDraft.splice(i, 1); drawSupRows(); drawPay(); }, text: "×" }));
+        const pick = r => {
+          l.name = r.name;
+          const v = r.vat !== undefined && r.vat !== null ? (Number(r.vat) === 23 ? 23 : 0) : lastSupVat(r.name);
+          if (v !== null && v !== undefined) l.vat = v;
+          drawSupRows(); drawPay();
+        };
+        name.addEventListener("change", () => {
+          if (name.value === "__new") {
+            newBox.hidden = false;
+            newBox.replaceChildren(supForm(null, r => { toast("Dodávateľ pridaný"); pick(r); }, () => { drawSupRows(); }));
+            return;
+          }
+          if (!name.value) { l.name = ""; drawSupRows(); drawPay(); return; }
+          const r = state.suppliers.get(name.value);
+          pick(r || { name: [...name.options].find(o => o.value === name.value).text.replace(/ \(archivovaný\)$/, "") });
+        });
+        return h("div", { class: "sup-block" },
+          h("div", { class: "sup-line" },
+            h("div", { class: "money-in" }, cost, h("span", { class: "per", text: "€" })),
+            h("span", { class: "sup-name" }, logoEl(supLogo(l.name), "sm"), name), vat,
+            h("button", { class: "x", type: "button", "aria-label": "Odstrániť dodávateľa " + (i + 1), onclick: () => { supLinesDraft.splice(i, 1); drawSupRows(); drawPay(); }, text: "×" })),
+          newBox);
       }));
     }
     supAddBtn.addEventListener("click", () => {
@@ -1801,7 +1887,7 @@ main { padding-bottom: 40px; }
     logoMissing = !wps.error && wps.data.length > 0 && !("logo" in wps.data[0]);
     const sups = await sb.from("suppliers").select("*").order("name");
     if (sups.error) supMissing = /suppliers|relation|schema cache/i.test(sups.error.message || "");
-    else { supMissing = false; state.suppliers = new Map(sups.data.map(r => [supKey(r.name), r])); }
+    else { supMissing = sups.data.length > 0 && !("archived" in sups.data[0]); state.suppliers = new Map(sups.data.map(r => [supKey(r.name), r])); }
     syncEl.textContent = "synchronizované";
     if (!modalOpen()) render();
   }
