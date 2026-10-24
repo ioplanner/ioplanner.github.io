@@ -11,7 +11,7 @@ Súkromný kalendár s mesačným a týždenným pohľadom, kanban nástenkou (*
 
 ## 1. Supabase (databáza)
 
-1. V projekte otvor **SQL Editor** → **New query**, vlož celý obsah súboru **supabase.sql** a stlač **Run**. Má sa ukázať *Success*. To isté potom urob so súbormi **supabase-prilohy.sql** (prílohy PDF) **supabase-viacdnove.sql** (akcie cez viac dní) a **supabase-mzdy.sql** (pracovné miesta a mzdy).
+1. V projekte otvor **SQL Editor** → **New query**, vlož celý obsah súboru **supabase.sql** a stlač **Run**. Má sa ukázať *Success*. To isté potom urob so súbormi **supabase-prilohy.sql** (prílohy PDF) **supabase-viacdnove.sql** (akcie cez viac dní) a **supabase-mzdy.sql** (pracovné miesta a mzdy) a **supabase-loga.sql** (logá).
 2. **Vytvor si prihlasovací účet:** **Authentication** → **Users** → **Add user** → **Create new user**. Zadaj e-mail a heslo a zaškrtni **Auto Confirm User**.
 3. **Zakáž registráciu cudzím:** **Authentication** → *Sign In / Providers* → vypni **Allow new users to sign up**.
 4. **Údaje na pripojenie:** **Project Settings** → **API Keys** → verejný kľúč **publishable** (`sb_publishable_…`), nie *secret* / *service_role*.
@@ -48,6 +48,7 @@ Zmeny: otvor súbor na GitHube → ceruzka → uprav → **Commit changes**. Str
 | „Úložisko na prílohy ešte neexistuje“ alebo „Databáza ešte nepozná prílohy“ | spusti supabase-prilohy.sql |
 | „Databáza ešte nepozná viacdňové akcie“ | spusti supabase-viacdnove.sql |
 | „Databáza ešte nepozná pracovné miesta“ | spusti supabase-mzdy.sql |
+| „Databáza ešte nepozná logá“ | spusti supabase-loga.sql |
 | „chýba tabuľka pre kalendár“ | spusti supabase-kalendar.sql |
 | Kalendár Apple hlási chybu alebo „Vyskúšať adresu“ ukáže *Missing authorization header* | vo funkcii **swift-service** vypni **Verify JWT** |
 | „Vyskúšať adresu“ ukáže *Function not found* | funkcia ešte nie je nasadená (Kalendár Apple, krok 2) |
@@ -77,6 +78,7 @@ Zmeny: otvor súbor na GitHube → ceruzka → uprav → **Commit changes**. Str
 - Akcie, pri ktorých chýba suma, sadzba alebo hodiny, sa do súčtu nezapočítajú a pohľad **Mzdy** na ne upozorní.
 - Sadzba sa uloží pri akcii, takže neskoršia zmena sadzby nezmení staré akcie. Pri akcii sa dá upraviť aj ručne.
 - Pohľad **Mzdy** (`#mzdy`): suma za mesiac, súčty podľa pracovných miest a zoznam akcií. Akcia patrí do mesiaca, v ktorom začína. Voľba *Len hotové* započíta iba akcie v stave Hotovo.
+- **Logá:** pri pracovnom mieste (*Mzdy → Upraviť* alebo pri vytváraní) aj pri dodávateľovi (*Mzdy → Dodávatelia*) nahráš logo. Diár ho zmenší na malý obrázok a ukáže ho pri výbere v akcii, na kartách akcií a v tabuľkách. Dodávatelia sa do zoznamu pridajú sami, keď ich zadáš pri akcii.
 - Pracovné miesto, s ktorým už nespolupracuješ, **archivuj**: zmizne z výberu, staré akcie a sumy ostanú.
 
 ## Kalendár Apple (iCloud)

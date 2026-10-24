@@ -177,7 +177,7 @@ header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; b
 .sup-line { display: grid; grid-template-columns: minmax(90px, 1fr) minmax(0, 1.6fr) auto auto; gap: 6px; align-items: center; }
 .sup-line .x { border: 0; background: transparent; color: var(--muted); font-size: 1.1rem; padding: 0 4px; }
 .sup-add { align-self: flex-start; padding: 5px 10px; font-size: .85rem; }
-@media (max-width: 620px) { .sup-line { grid-template-columns: minmax(0, 1fr) auto auto; } .sup-line input[list] { grid-column: 1 / -1; grid-row: 2; } }
+@media (max-width: 620px) { .sup-line { grid-template-columns: minmax(0, 1fr) auto auto; } .sup-line .sup-name { grid-column: 1 / -1; grid-row: 2; } }
 .profit { display: flex; flex-direction: column; gap: 10px; }
 .profit-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .pc { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -185,6 +185,8 @@ header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; b
 .pc .neg { color: var(--danger); }
 .pc.main { border-color: var(--done); }
 .pc.main strong { color: var(--done); }
+.pc.main.loss { border-color: var(--danger); }
+.pc.main.loss strong { color: var(--danger); }
 .tbl tfoot tr.sub td { font-weight: 500; color: var(--muted); border-top: 1px solid var(--line); }
 @media (max-width: 520px) { .profit-cards { grid-template-columns: minmax(0, 1fr); } }
 .pay-extra { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 8px; }
@@ -197,6 +199,21 @@ header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; b
 .wp-rate { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .wp-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 .wp-tag { color: var(--accent); font-weight: 600; }
+.logo { object-fit: contain; background: #fff; border: 1px solid var(--line); border-radius: 6px; flex: none; }
+.logo.xs { width: 16px; height: 16px; border-radius: 4px; }
+.logo.sm { width: 22px; height: 22px; }
+.logo.md { width: 34px; height: 34px; border-radius: 8px; }
+.logo.lg { width: 48px; height: 48px; border-radius: 10px; }
+.logo.empty { display: inline-grid; place-items: center; background: var(--surface-2); color: var(--muted); font-size: .65rem; border-style: dashed; }
+.with-logo { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.logo-pick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wp-pick { display: flex; align-items: center; gap: 8px; }
+.wp-pick select { flex: 1; min-width: 0; }
+.wp-logo-box[hidden] { display: none; }
+.sup-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sup-name input { flex: 1; min-width: 0; }
+.sup-cell { display: flex; flex-direction: column; gap: 4px; }
+.sup-row { grid-template-columns: minmax(0, 1fr) auto; }
 .pay-sum { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
 .pay-total { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 2px; }
 .pay-total strong { font-family: var(--f-display); font-size: 2.2rem; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
@@ -399,6 +416,7 @@ main { padding-bottom: 40px; }
   function saveLocalWp() {
     if (!localMode) return;
     try { localStorage.setItem("diar.workplaces", JSON.stringify([...state.workplaces.values()])); } catch (e) {}
+    try { localStorage.setItem("diar.suppliers", JSON.stringify([...state.suppliers.values()])); } catch (e) {}
   }
   function saveLocal() {
     if (!localMode) return;
@@ -510,6 +528,62 @@ main { padding-bottom: 40px; }
   const num = n => numFmt.format(n || 0);
   const toNum = v => { const x = parseFloat(String(v ?? "").replace(/\s/g, "").replace(",", ".")); return isFinite(x) ? x : null; };
   let wpMissing = false;
+  let supMissing = false, logoMissing = false;
+  state.suppliers = new Map();   // lower-case name -> { id, name, logo }
+  const supKey = n => (n || "").trim().toLowerCase();
+  const supLogo = n => { const r = state.suppliers.get(supKey(n)); return r && r.logo ? r.logo : null; };
+  const wpLogo = id => { const w = id && state.workplaces.get(id); return w && w.logo ? w.logo : null; };
+  function logoEl(src, cls) { return src ? h("img", { class: "logo " + (cls || ""), src, alt: "" }) : null; }
+  // shrink an uploaded image to a small PNG data URL (keeps transparency), max 160 px
+  function readLogo(file) {
+    return new Promise((resolve, reject) => {
+      if (!/^image\//.test(file.type)) return reject("Logo musí byť obrázok (PNG, JPG, SVG…).");
+      if (file.size > 8 * 1048576) return reject("Obrázok je väčší ako 8 MB.");
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const max = 160, w = img.naturalWidth || max, hh = img.naturalHeight || max;
+        const k = Math.min(1, max / Math.max(w, hh));
+        const c = document.createElement("canvas");
+        c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(hh * k));
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL("image/png"));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject("Obrázok sa nepodarilo načítať."); };
+      img.src = url;
+    });
+  }
+  // small logo picker: preview, choose, remove
+  function logoPicker(idBase, current, onChange) {
+    let val = current || null;
+    const input = h("input", { id: idBase, type: "file", accept: "image/*", hidden: true });
+    const box = h("div", { class: "logo-pick" });
+    const err = h("span", { class: "err", hidden: true });
+    function draw() {
+      box.replaceChildren(
+        val ? h("img", { class: "logo lg", src: val, alt: "Logo" }) : h("span", { class: "logo lg empty", "aria-hidden": "true", text: "logo" }),
+        h("button", { class: "ghost mini", type: "button", onclick: () => input.click(), text: val ? "Zmeniť logo" : "Nahrať logo" }),
+        val ? h("button", { class: "ghost mini", type: "button", onclick: () => { val = null; onChange(null); draw(); }, text: "Odstrániť" }) : null,
+        input, err);
+    }
+    input.addEventListener("change", async () => {
+      const f = input.files[0]; input.value = ""; if (!f) return;
+      err.hidden = true;
+      try { val = await readLogo(f); onChange(val); draw(); } catch (m) { err.textContent = m; err.hidden = false; }
+    });
+    draw();
+    return box;
+  }
+  async function saveSupplierLogo(name, logo) {
+    const k = supKey(name); if (!k) return;
+    const cur = state.suppliers.get(k);
+    const row = { id: cur ? cur.id : newId(), name: name.trim(), logo: logo || null };
+    if (!sb || !uid) { state.suppliers.set(k, row); saveLocalWp(); return; }
+    const { error } = await sb.from("suppliers").upsert(row);
+    if (error) throw friendly(error);
+    supMissing = false; state.suppliers.set(k, row);
+  }
   const activeWps = () => [...state.workplaces.values()].filter(w => !w.archived).sort((a, b) => a.name.localeCompare(b.name, "sk"));
   // quantity that follows from the event's own dates and times
   function autoQty(ev, type) {
@@ -555,6 +629,7 @@ main { padding-bottom: 40px; }
   async function saveWorkplace(w) {
     // rate 0 = not agreed yet (entered on each event instead)
     const row = { id: w.id || newId(), name: w.name.trim(), rate_type: w.rate_type, rate: Number(w.rate) || 0, note: w.note || "", archived: !!w.archived };
+    if (w.logo !== undefined) row.logo = w.logo || null;   // only sent when set, so it works before the logo SQL is run
     if (!sb || !uid) { state.workplaces.set(row.id, row); saveLocalWp(); return row; }
     const { error } = await sb.from("workplaces").upsert(row);
     if (error) throw friendly(error);
@@ -587,11 +662,14 @@ main { padding-bottom: 40px; }
       if (!name.value.trim()) { err.textContent = "Zadaj názov pracovného miesta."; err.hidden = false; name.focus(); return; }
       if (r === null || r < 0) { err.textContent = "Sadzbu zadaj ako číslo, napr. 12,50, alebo ju nechaj prázdnu."; err.hidden = false; rate.focus(); return; }
       save.disabled = true;
-      try { const row = await saveWorkplace({ ...w, name: name.value, rate_type: type.value, rate: r }); onDone(row); }
+      try { const row = await saveWorkplace({ ...w, name: name.value, rate_type: type.value, rate: r, ...(logoChanged ? { logo: newLogo } : {}) }); onDone(row); }
       catch (msg) { err.textContent = msg; err.hidden = false; save.disabled = false; }
     });
+    let logoChanged = false, newLogo = w.logo || null;
+    const logo = logoPicker("wp-logo-" + key, w.logo, v => { logoChanged = true; newLogo = v; });
     const box = h("div", { class: "wp-form" },
       name,
+      logo,
       h("div", { class: "wp-rate" }, type, h("div", { class: "money-in" }, rate, per)),
       rateHint, err,
       h("div", { class: "wp-actions" }, onCancel ? h("button", { class: "ghost", type: "button", onclick: onCancel, text: "Zrušiť" }) : null, save),
@@ -802,6 +880,7 @@ main { padding-bottom: 40px; }
   }
   function friendly(e) {
     const msg = (e && (e.message || "")) + "";
+    if (/logo|suppliers/i.test(msg)) return "Databáza ešte nepozná logá. V Supabase spusti súbor supabase-loga.sql (pozri README).";
     if (/workplaces|'work' column/i.test(msg)) return "Databáza ešte nepozná pracovné miesta. V Supabase spusti súbor supabase-mzdy.sql (pozri README).";
     if (/end_date/i.test(msg)) return "Databáza ešte nepozná viacdňové akcie. V Supabase spusti súbor supabase-viacdnove.sql (pozri README).";
     if (/attachments/i.test(msg)) return "Databáza ešte nepozná prílohy. V Supabase spusti súbor supabase-prilohy.sql (pozri README).";
@@ -829,7 +908,7 @@ main { padding-bottom: 40px; }
         opts.showDate ? h("span", { class: "prog", text: rangeText(ev) }) : null,
         opts.pill !== false ? h("span", { class: "pill", dataset: { s: ev.status }, text: STATUS[ev.status] }) : null,
         total ? h("span", { class: "prog", text: "☑ " + doneN + "/" + total }) : null,
-        ev.work ? h("span", { class: "wp-tag", text: ev.work.name + (payOf(ev) && payOf(ev).amount != null ? " · " + money(payOf(ev).amount) : "") }) : null,
+        ev.work ? h("span", { class: "wp-tag with-logo" }, logoEl(wpLogo(ev.work.wp), "xs"), ev.work.name + (payOf(ev) && payOf(ev).amount != null ? " · " + money(payOf(ev).amount) : "")) : null,
         ev.notes ? h("span", { text: "poznámka" }) : null,
         ev.attachments && ev.attachments.length ? h("span", { class: "prog", text: "PDF " + ev.attachments.length }) : null,
         opts.move ? opts.move : null,
@@ -1019,7 +1098,7 @@ main { padding-bottom: 40px; }
     const groups = new Map();
     rows.forEach(({ e, p }) => {
       const k = e.work.wp || ("name:" + e.work.name);
-      const g = groups.get(k) || { name: e.work.name, count: 0, qty: {}, amount: 0, vat: 0 };
+      const g = groups.get(k) || { name: e.work.name, wp: e.work.wp, count: 0, qty: {}, amount: 0, vat: 0 };
       const v = vatOf(p, e.work); if (v.vat) g.vat += v.vat;
       g.count++;
       if (p && p.qty != null) g.qty[p.unit] = (g.qty[p.unit] || 0) + p.qty;
@@ -1041,7 +1120,7 @@ main { padding-bottom: 40px; }
     const byWp = gList.length ? h("div", { class: "tbl-wrap" }, h("table", { class: "tbl" },
       h("thead", {}, h("tr", {}, h("th", { text: "Pracovné miesto" }), h("th", { class: "n", text: "Akcie" }), h("th", { class: "n", text: "Množstvo" }), h("th", { class: "n", text: "Bez DPH" }), h("th", { class: "n", text: "DPH" }), h("th", { class: "n", text: "S DPH" }))),
       h("tbody", {}, gList.map(g => h("tr", {},
-        h("td", { text: g.name }),
+        h("td", {}, h("span", { class: "with-logo" }, logoEl(wpLogo(g.wp), "sm"), g.name)),
         h("td", { class: "n", text: g.count }),
         h("td", { class: "n", text: Object.keys(g.qty).map(u => num(g.qty[u]) + " " + u).join(", ") || "–" }),
         h("td", { class: "n", text: money(g.amount) }),
@@ -1056,7 +1135,7 @@ main { padding-bottom: 40px; }
       h("tbody", {}, rows.map(({ e, p, v }) => h("tr", { class: "click", onclick: () => openEditor(e.id) },
         h("td", { class: "mono", text: rangeText(e) }),
         h("td", {}, e.title, e.status === "done" ? h("span", { class: "pill", dataset: { s: "done" }, text: "Hotovo" }) : null),
-        h("td", { text: e.work.name }),
+        h("td", {}, h("span", { class: "with-logo" }, logoEl(wpLogo(e.work.wp), "sm"), e.work.name)),
         h("td", { class: "n", text: !p ? "–" : p.rate == null ? (e.work.type === "task" ? "chýba suma" : "chýba sadzba") : p.qty == null ? "chýbajú hodiny" : e.work.type === "task" ? "úloha" :
           num(p.qty) + " " + p.unit + " × " + money(p.rate) + (p.extra ? (p.extra > 0 ? " + " : " − ") + money(Math.abs(p.extra)) + " iné" + (p.extraNote ? " (" + p.extraNote + ")" : "") : "") }),
         h("td", { class: "n", text: p && p.amount != null ? money(p.amount) : "–" }),
@@ -1081,7 +1160,7 @@ main { padding-bottom: 40px; }
         h("div", { class: "pc" }, h("span", { class: "lbl", text: "Príjem bez DPH" }), h("strong", { text: money(total) })),
         h("div", { class: "pc" }, h("span", { class: "lbl", text: "Dodávatelia bez DPH" }), h("strong", { class: "neg", text: "− " + money(costTotal) }),
           h("span", { class: "vat-sum", text: "DPH " + money(costVatTotal) + " · " + money(costTotal + costVatTotal) + " s DPH" })),
-        h("div", { class: "pc main" }, h("span", { class: "lbl", text: "Zisk" }), h("strong", { text: money(total - costTotal) })),
+        h("div", { class: "pc main" + (total - costTotal < 0 ? " loss" : "") }, h("span", { class: "lbl", text: "Zisk" }), h("strong", { text: money(total - costTotal) })),
       ),
       profitIncomplete ? h("p", { class: "warn", text: "Pri " + profitIncomplete + " " + (profitIncomplete === 1 ? "akcii" : "akciách") + " s dodávateľom chýba suma príjmu, zisk je preto nižší, ako bude." }) : null,
       costRows.length ? h("div", { class: "tbl-wrap" }, h("table", { class: "tbl" },
@@ -1089,7 +1168,7 @@ main { padding-bottom: 40px; }
         h("tbody", {}, costRows.map(({ e, p }) => h("tr", { class: "click", onclick: () => openEditor(e.id) },
           h("td", { class: "mono", text: rangeText(e) }),
           h("td", { text: e.title }),
-          h("td", { text: p.sups.map(l => (l.name || "bez mena") + (p.sups.length > 1 ? " " + money(l.cost) : "")).join(", ") }),
+          h("td", {}, h("span", { class: "sup-cell" }, p.sups.map(l => h("span", { class: "with-logo" }, logoEl(supLogo(l.name), "sm"), (l.name || "bez mena") + (p.sups.length > 1 ? " " + money(l.cost) : ""))))),
           h("td", { class: "n", text: p.amount != null ? money(p.amount) : "–" }),
           h("td", { class: "n", text: money(p.cost) }),
           h("td", { class: "n", text: p.costVat ? money(p.costVat) : "0 %" }),
@@ -1110,7 +1189,7 @@ main { padding-bottom: 40px; }
         return;
       }
       list.append(h("div", { class: "wp-row" + (w.archived ? " archived" : "") },
-        h("div", { class: "wp-main" }, h("strong", { text: w.name }),
+        h("div", { class: "wp-main" }, h("strong", { class: "with-logo" }, logoEl(w.logo, "sm"), w.name),
           h("span", { class: "hint", text: RATE[w.rate_type].label + " sadzba · " +
             (Number(w.rate) > 0 ? money(w.rate) + (w.rate_type === "task" ? " / úlohu (obvykle)" : " " + RATE[w.rate_type].per.replace("€ ", "")) : (w.rate_type === "task" ? "suma sa zadáva pri akcii" : "sadzba zatiaľ nezadaná")) +
             (w.archived ? " · archivované" : "") })),
@@ -1126,6 +1205,20 @@ main { padding-bottom: 40px; }
       ? wpForm(null, () => { wpEditing = null; render(); toast("Pracovné miesto pridané"); }, () => { wpEditing = null; render(); })
       : h("button", { class: "ghost", type: "button", onclick: () => { wpEditing = "new"; render(); }, text: "+ Nové pracovné miesto" });
 
+    // suppliers with logos: everyone used on an event plus saved ones
+    const supNamesAll = new Map();
+    [...state.events.values()].forEach(e => supLines(e.work).forEach(l => { if (l.name) supNamesAll.set(supKey(l.name), l.name); }));
+    state.suppliers.forEach((r, k) => supNamesAll.set(k, r.name));
+    const supList = h("div", { class: "wp-list" });
+    [...supNamesAll.values()].sort((a, b) => a.localeCompare(b, "sk")).forEach(n => {
+      supList.append(h("div", { class: "wp-row sup-row" },
+        h("div", { class: "wp-main" }, h("strong", { class: "with-logo" }, logoEl(supLogo(n), "sm"), n)),
+        logoPicker("sup-logo-" + supKey(n).replace(/[^a-z0-9]/g, "").slice(0, 20) + "-" + supNamesAll.size, supLogo(n), async v => {
+          try { await saveSupplierLogo(n, v); toast(v ? "Logo uložené" : "Logo odstránené"); render(); } catch (m) { toast(m); }
+        })));
+    });
+    if (!supNamesAll.size) supList.append(h("p", { class: "empty", text: "Dodávatelia sa sem pridajú sami, keď ich zadáš pri akcii." }));
+
     viewEl.replaceChildren(...[
       tools,
       wpMissing ? h("p", { class: "notice", text: "Databáza ešte nepozná pracovné miesta. V Supabase spusti súbor supabase-mzdy.sql (pozri README)." }) : null,
@@ -1137,6 +1230,11 @@ main { padding-bottom: 40px; }
         h("div", { class: "agenda-head" }, h("h2", { text: "Pracovné miesta" })),
         h("p", { class: "hint", text: "Odberatelia s dohodnutou sadzbou. Archivované sa už neponúkajú pri nových akciách, staré akcie ostanú." }),
         list, addBox),
+      h("section", { class: "agenda wp-manage" },
+        h("div", { class: "agenda-head" }, h("h2", { text: "Dodávatelia" })),
+        h("p", { class: "hint", text: "Každý, komu niečo vyplácaš pri akciách. Tu im môžeš priradiť logo." }),
+        (supMissing || logoMissing) ? h("p", { class: "notice", text: "Logá sa zatiaľ nedajú uložiť do databázy. V Supabase spusti súbor supabase-loga.sql (pozri README)." }) : null,
+        supList),
     ].filter(Boolean));
   }
 
@@ -1178,6 +1276,8 @@ main { padding-bottom: 40px; }
       wpSel.value = draft.work ? draft.work.wp || "" : "";
     }
     const payBox = h("div", { class: "pay-box" });
+    const wpLogoBox = h("span", { class: "wp-logo-box" });
+    function drawWpLogo() { const src = draft.work ? wpLogo(draft.work.wp) : null; wpLogoBox.replaceChildren(...(src ? [logoEl(src, "md")] : [])); wpLogoBox.hidden = !src; }
     const newWpBox = h("div", { class: "new-wp", hidden: true });
     const payType = h("select", { id: "f-paytype", "aria-label": "Druh sadzby" }, Object.keys(RATE).map(k => h("option", { value: k, text: RATE[k].label })));
     const payRate = h("input", { id: "f-payrate", type: "text", inputmode: "decimal", placeholder: "0,00", "aria-label": "Sadzba v eurách" });
@@ -1211,10 +1311,12 @@ main { padding-bottom: 40px; }
         drawV();
         cost.addEventListener("input", () => { l.costText = cost.value; l.cost = toNum(cost.value) || 0; drawPay(); });
         name.addEventListener("input", () => { l.name = name.value; });
-        name.addEventListener("change", () => { const v = lastSupVat(name.value); if (v !== null) { l.vat = v; drawV(); drawPay(); } });
+        name.addEventListener("change", () => { const lg = name.parentNode && name.parentNode.querySelector("img.logo"); const src = supLogo(name.value);
+          if (lg) lg.remove(); if (src) name.parentNode.prepend(logoEl(src, "sm"));
+          const v = lastSupVat(name.value); if (v !== null) { l.vat = v; drawV(); drawPay(); } });
         return h("div", { class: "sup-line" },
           h("div", { class: "money-in" }, cost, h("span", { class: "per", text: "€" })),
-          name, vat,
+          h("span", { class: "sup-name" }, logoEl(supLogo(l.name), "sm"), name), vat,
           h("button", { class: "x", type: "button", "aria-label": "Odstrániť dodávateľa " + (i + 1), onclick: () => { supLinesDraft.splice(i, 1); drawSupRows(); drawPay(); }, text: "×" }));
       }));
     }
@@ -1328,7 +1430,8 @@ main { padding-bottom: 40px; }
       paySupRow,
       supOut,
     );
-    fillWp(); loadPayInputs(); drawVat(); drawPay();
+    fillWp(); loadPayInputs(); drawVat(); drawPay(); drawWpLogo();
+    wpSel.addEventListener("change", () => setTimeout(drawWpLogo, 0));
     // keep the end on or after the start when the start date moves
     let lastStart = date.value;
     date.addEventListener("change", () => {
@@ -1478,7 +1581,7 @@ main { padding-bottom: 40px; }
     const form = h("form", { class: "modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "m-title" },
       h("h2", { id: "m-title", text: src ? "Upraviť akciu" : "Nová akcia" }),
       h("div", { class: "field" }, h("label", { for: "f-title", text: "Názov" }), title),
-      h("div", { class: "field" }, h("label", { for: "f-wp", text: "Pracovné miesto" }), wpSel, newWpBox, payBox),
+      h("div", { class: "field" }, h("label", { for: "f-wp", text: "Pracovné miesto" }), h("div", { class: "wp-pick" }, wpLogoBox, wpSel), newWpBox, payBox),
       h("div", { class: "when" },
         h("div", { class: "field" }, h("label", { for: "f-date", text: "Začiatok" }), h("div", { class: "pair" }, date, time)),
         h("div", { class: "field" }, h("label", { for: "f-enddate", text: "Koniec" }), h("div", { class: "pair" }, endDate, end)),
@@ -1656,6 +1759,7 @@ main { padding-bottom: 40px; }
       const saved = JSON.parse(localStorage.getItem("diar.events") || "[]");
       saved.forEach(e => { if (e && e.id && e.title) state.events.set(e.id, e); });
       JSON.parse(localStorage.getItem("diar.workplaces") || "[]").forEach(w => { if (w && w.id) state.workplaces.set(w.id, w); });
+      JSON.parse(localStorage.getItem("diar.suppliers") || "[]").forEach(r => { if (r && r.name) state.suppliers.set(supKey(r.name), r); });
     } catch (e) {}
     syncEl.textContent = "len toto zariadenie";
     notice.textContent = !window.supabase && configured
@@ -1694,6 +1798,10 @@ main { padding-bottom: 40px; }
     if (wps.error) wpMissing = /workplaces|relation|schema cache/i.test(wps.error.message || "");
     else { wpMissing = false; state.workplaces = new Map(wps.data.map(w => [w.id, w])); }
     try { localStorage.setItem("diar.wpcache." + uid, JSON.stringify(wps.data || [])); } catch (e) {}
+    logoMissing = !wps.error && wps.data.length > 0 && !("logo" in wps.data[0]);
+    const sups = await sb.from("suppliers").select("*").order("name");
+    if (sups.error) supMissing = /suppliers|relation|schema cache/i.test(sups.error.message || "");
+    else { supMissing = false; state.suppliers = new Map(sups.data.map(r => [supKey(r.name), r])); }
     syncEl.textContent = "synchronizované";
     if (!modalOpen()) render();
   }
@@ -1723,6 +1831,7 @@ main { padding-bottom: 40px; }
     channel = sb.channel("events-" + uid)
       .on("postgres_changes", { event: "*", schema: "public", table: "events", filter: "user_id=eq." + uid }, scheduleLoad)
       .on("postgres_changes", { event: "*", schema: "public", table: "workplaces", filter: "user_id=eq." + uid }, scheduleLoad)
+      .on("postgres_changes", { event: "*", schema: "public", table: "suppliers", filter: "user_id=eq." + uid }, scheduleLoad)
       .subscribe();
   }
 
