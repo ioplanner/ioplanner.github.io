@@ -58,7 +58,7 @@ Zmeny: otvor súbor na GitHube → ceruzka → uprav → **Commit changes**. Str
 - V detaile akcie → **+ Priložiť PDF**. Pri každom súbore vyberieš druh: *Cenová ponuka*, *Faktúra* alebo *Iné*.
 - Súbory sú v súkromnom úložisku Supabase (*Storage → prilohy*), každý vidí iba svoje. **Otvoriť** vytvorí dočasný odkaz platný 10 minút.
 - Max 20 MB na súbor, bezplatný plán Supabase má spolu 1 GB.
-- **Položky z cenovej ponuky:** keď priložíš PDF s druhom *Cenová ponuka* (zo SuperFaktúry), diár z neho sám vypíše položky na montáž: názov s popisom, počet a jednotku, bez cien. Funguje to pre ľubovoľný počet riadkov aj pre ponuky na viac strán. Čítanie prebieha priamo v prehliadači, bez AI a zadarmo.
+- **Položky z cenovej ponuky:** keď priložíš PDF s druhom *Cenová ponuka* (zo SuperFaktúry), diár z neho sám vypíše položky na montáž: názov s popisom, počet a jednotku, bez cien. Funguje to pre ľubovoľný počet riadkov aj pre ponuky na viac strán. Prečíta aj ponuky, ktoré boli po stiahnutí znova uložené (napr. cez Náhľad na Macu) a majú v sebe text zakódovaný. Čítanie prebieha priamo v prehliadači, bez AI a zadarmo.
   - Položky odškrtávaš, čo máš zobraté; po **Uložiť** sa odškrtnutia zapamätajú.
   - Chýbajúcu vec dopíšeš ručne do poľa *Pridať položku ručne*; **Načítať znova** ju nezmaže.
   - **Exportovať CSV** stiahne súpis (Položka; Počet; Jednotka; Zobraté) pre Excel alebo Numbers. Pri viacerých ponukách v jednej akcii je aj *Exportovať všetky položky*.
