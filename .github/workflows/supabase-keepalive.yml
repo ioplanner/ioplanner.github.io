@@ -1,0 +1,48 @@
+# Udržiava Supabase projekt bdelý: bezplatný projekt sa po 7 dňoch bez aktivity uspí.
+# Dvakrát do týždňa pošle malú požiadavku do databázy. Dá sa spustiť aj ručne (Actions → Run workflow).
+name: Supabase – udržiavanie v bdelom stave
+
+on:
+  schedule:
+    - cron: "17 6 * * 1,4"   # pondelok a štvrtok ráno (UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Signál do databázy
+        env:
+          SUPABASE_URL: https://mtifpeafpmkeimqiqfym.supabase.co
+          SUPABASE_KEY: sb_publishable_sUqoAz8t_mJuAd4VR9Fw7Q_HlGTDAqg
+        run: |
+          code=$(curl -s -o response.json -w "%{http_code}" \
+            "$SUPABASE_URL/rest/v1/events?select=id&limit=1" \
+            -H "apikey: $SUPABASE_KEY" -H "Authorization: Bearer $SUPABASE_KEY")
+          echo "Odpoveď databázy: HTTP $code"
+          cat response.json; echo
+          if [ "$code" != "200" ]; then
+            echo "::error::Databáza neodpovedala (HTTP $code). Ak je projekt v Supabase pozastavený (Paused), klikni tam na Restore project."
+            exit 1
+          fi
+
+      # GitHub vypne naplánované spúšťanie, ak sa v repozitári 60 dní nič nezmení.
+      # Preto raz za ~45 dní zapíše dátum do malého súboru, aby repozitár ostal aktívny.
+      - uses: actions/checkout@v4
+      - name: Udržať repozitár aktívny
+        run: |
+          last=$(git log -1 --format=%ct)
+          now=$(date +%s)
+          if [ $(( (now - last) / 86400 )) -ge 45 ]; then
+            date -u +"%Y-%m-%d %H:%M UTC" > .github/keepalive.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+            git add .github/keepalive.txt
+            git commit -m "Udržiavanie aktivity repozitára"
+            git push
+          else
+            echo "Repozitár je aktívny, netreba nič zapisovať."
+          fi
