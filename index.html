@@ -252,6 +252,23 @@ header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; b
 .file .fname small { color: var(--muted); font-family: var(--f-mono); font-size: .72rem; margin-left: 6px; }
 .file .open { border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 3px 9px; font-size: .8rem; font-weight: 600; color: var(--accent); }
 .file .x { border: 0; background: transparent; color: var(--muted); font-size: 1.1rem; padding: 0 4px; }
+.file-wrap { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.file-wrap > .file { border: 0; border-radius: 0; border-bottom: 1px solid var(--line); }
+.q-items { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 6px; background: var(--surface); }
+.q-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: .88rem; }
+.q-head .spacer { flex: 1; }
+.ghost.mini { padding: 3px 9px; font-size: .78rem; border-radius: 7px; }
+.q-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.q-list li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 5px 0; border-top: 1px solid var(--line); }
+.q-list li:first-child { border-top: 0; }
+.q-list input[type=checkbox] { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--accent); }
+.q-list label { display: flex; flex-direction: column; gap: 1px; min-width: 0; cursor: pointer; text-transform: none; letter-spacing: normal; font-weight: 400; font-size: inherit; color: var(--ink); }
+.q-name { overflow-wrap: anywhere; font-size: .9rem; }
+.q-qty { font-family: var(--f-mono); font-size: .72rem; color: var(--muted); }
+.q-list li.done .q-name { text-decoration: line-through; color: var(--muted); }
+.q-list .x { border: 0; background: transparent; color: var(--muted); font-size: 1.05rem; padding: 0 4px; }
+.q-add input { width: 100%; border: 1px dashed var(--line); background: transparent; border-radius: 8px; padding: 6px 9px; font-size: .85rem; }
+.q-all { align-self: flex-start; }
 .file-add { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .file-add .hint { color: var(--muted); font-size: .8rem; }
 .feed-lead { margin: 0; color: var(--muted); }
@@ -451,7 +468,11 @@ main { padding-bottom: 40px; }
       } : null,
       status: statusOf(ev), notes: ev.notes || "",
       checklist: (ev.checklist || []).filter(c => c.text.trim()).map(c => ({ id: c.id, text: c.text.trim(), done: !!c.done })),
-      attachments: (ev.attachments || []).map(a => ({ path: a.path, name: a.name, size: a.size || 0, kind: a.kind || "ine", added: a.added || Date.now() })),
+      attachments: (ev.attachments || []).map(a => {
+        const o = { path: a.path, name: a.name, size: a.size || 0, kind: a.kind || "ine", added: a.added || Date.now() };
+        if (Array.isArray(a.items)) o.items = a.items.filter(i => i && (i.name || "").trim()).map(i => ({ name: i.name.trim(), qty: i.qty || "", unit: i.unit || "", done: !!i.done, ...(i.manual ? { manual: true } : {}) }));
+        return o;
+      }),
       updated: Date.now(),
     };
   }
@@ -607,6 +628,125 @@ main { padding-bottom: 40px; }
     if (!sb || !paths.length) return;
     try { await sb.storage.from(BUCKET).remove(paths); } catch (e) {}
   }
+  // ---------- Items from price quotes (SuperFaktura PDF) ----------
+  // Reads line items (name, quantity, unit) from a SuperFaktura price quote.
+  // Input: pages = [[{ str, x, y }]] with y measured from the top of the page.
+  function parseQuoteItems(pages) {
+    const norm = s => s.replace(/\s+/g, " ").trim();
+    const out = [];
+    let cols = null, done = false;
+    for (const items of pages) {
+      if (done) break;
+      const txt = items.filter(i => i.str && i.str.trim());
+      // header columns (a continuation page without a header reuses the previous page's columns)
+      const hName = txt.find(i => /^Názov( a popis)?/i.test(i.str.trim()));
+      const hQty = txt.find(i => /^Počet$/i.test(i.str.trim()));
+      const hUnit = txt.find(i => /^Jednotka$/i.test(i.str.trim()));
+      let headBottom;
+      if (hName && hQty) {
+        const headTop = Math.min(hName.y, hQty.y) - 25;          // header spans ~3 lines ("Jedn. cena / bez DPH")
+        headBottom = Math.max(hName.y, hQty.y) + 14;
+        const priceCol = txt.filter(i => /Jedn\.?\s*cena|^DPH$/i.test(i.str.trim()) && i.y >= headTop && i.y <= headBottom + 10)
+          .reduce((m, i) => Math.min(m, i.x), Infinity);
+        const unitX = hUnit ? hUnit.x - 12 : hQty.x + 30;
+        cols = { nameX: hName.x - 4, qtyX: hQty.x - 18, unitX, unitEnd: isFinite(priceCol) ? priceCol - 4 : unitX + 70 };
+      } else if (cols) headBottom = 0;
+      else continue;
+      const { nameX, qtyX, unitX, unitEnd } = cols;
+      const stop = txt.filter(i => i.y > headBottom && /^(Poznámka|Suma bez DPH|Celková suma|Spolu|Zľava|Podpis)/i.test(i.str.trim()))
+        .reduce((m, i) => Math.min(m, i.y), Infinity);
+      if (isFinite(stop)) done = true;
+      // ignore the page footer ("Ponuku vystavil", "Strana 1/2", "Vytvorené pomocou")
+      const foot = txt.filter(i => /^(Ponuku vystavil|Strana \d|Vytvorené pomocou|Powered by)/i.test(i.str.trim())).reduce((m, i) => Math.min(m, i.y), Infinity);
+
+      // rows of text between header and totals, grouped by baseline
+      const body = txt.filter(i => i.y > headBottom + 2 && i.y < Math.min(stop, foot) - 2 && i.x >= nameX);
+      body.sort((a, b) => a.y - b.y || a.x - b.x);
+      const lines = [];
+      for (const it of body) {
+        const ln = lines.find(l => Math.abs(l.y - it.y) < 3);
+        if (ln) ln.items.push(it); else lines.push({ y: it.y, items: [it] });
+      }
+      const rows = lines.map(l => {
+        const name = norm(l.items.filter(i => i.x < qtyX).sort((a, b) => a.x - b.x).map(i => i.str).join(" "));
+        const qty = norm(l.items.filter(i => i.x >= qtyX && i.x < unitX).map(i => i.str).join(" "));
+        const unit = norm(l.items.filter(i => i.x >= unitX && i.x < unitEnd).map(i => i.str).join(" "));
+        return { y: l.y, name, qty, unit };
+      }).filter(r => r.name || r.qty);
+
+      // a row with a quantity is an item; other name lines belong to the nearest item
+      const anchors = rows.filter(r => /^\d+([.,]\d+)?$/.test(r.qty.replace(/\s/g, "")));
+      if (!anchors.length) continue;
+      const groups = anchors.map(a => ({ a, parts: [] }));
+      let prev = null;
+      for (const r of rows) {
+        let g;
+        if (anchors.includes(r)) g = groups.find(x => x.a === r);
+        else {
+          // continue an unclosed bracket from the previous line, else attach to the nearest item
+          const prevText = prev ? prev.parts.map(p => p.name).join(" ") : "";
+          const open = (prevText.match(/\(/g) || []).length > (prevText.match(/\)/g) || []).length;
+          if (prev && open) g = prev;
+          else g = groups.reduce((best, x) => Math.abs(x.a.y - r.y) < Math.abs(best.a.y - r.y) - 0.5 ? x : best, groups[0]);
+        }
+        g.parts.push(r);
+        prev = g;
+      }
+      for (const g of groups) {
+        g.parts.sort((a, b) => a.y - b.y);
+        const name = norm(g.parts.map(p => p.name).filter(Boolean).join(" ")).replace(/\(\s+/g, "(").replace(/\s+\)/g, ")");
+        if (!name) continue;
+        out.push({ name, qty: g.a.qty.replace(/\s/g, "").replace(".", ","), unit: g.a.unit });
+      }
+    }
+    return out;
+  }
+
+  let pdfjsReady = null;
+  function loadPdfjs() {
+    if (!pdfjsReady) pdfjsReady = new Promise((resolve, reject) => {
+      const sc = document.createElement("script");
+      sc.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+      sc.onload = () => {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+        resolve(window.pdfjsLib);
+      };
+      sc.onerror = () => { pdfjsReady = null; reject("Nepodarilo sa načítať čítačku PDF. Skontroluj pripojenie."); };
+      document.head.appendChild(sc);
+    });
+    return pdfjsReady;
+  }
+  async function readQuoteItems(buffer) {
+    const lib = await loadPdfjs();
+    const doc = await lib.getDocument({ data: new Uint8Array(buffer) }).promise;
+    const pages = [];
+    for (let n = 1; n <= doc.numPages; n++) {
+      const pg = await doc.getPage(n); const vp = pg.getViewport({ scale: 1 });
+      const tc = await pg.getTextContent();
+      pages.push(tc.items.map(i => ({ str: i.str, x: i.transform[4], y: vp.height - i.transform[5] })));
+    }
+    return parseQuoteItems(pages).map(i => ({ ...i, done: false }));
+  }
+  async function fetchAttachment(a) {
+    const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(a.path, 120);
+    if (error || !data) throw "Súbor sa nepodarilo načítať z úložiska.";
+    const r = await fetch(data.signedUrl);
+    if (!r.ok) throw "Súbor sa nepodarilo stiahnuť (" + r.status + ").";
+    return r.arrayBuffer();
+  }
+  function csvCell(v) { const t = String(v ?? ""); return /[;"\n\r]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; }
+  function downloadItemsCsv(title, date, groups) {
+    // ";" separator and BOM so Excel opens Slovak text correctly
+    const lines = [["Položka", "Počet", "Jednotka", "Zobraté", "Cenová ponuka"].join(";")];
+    groups.forEach(g => g.items.forEach(i => lines.push([i.name, i.qty, i.unit, i.done ? "áno" : "", g.file].map(csvCell).join(";"))));
+    const blob = new Blob(["\ufeff" + lines.join("\r\n") + "\r\n"], { type: "text/csv;charset=utf-8" });
+    const safe = (title || "akcia").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 50) || "akcia";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = "montaz-" + safe + (date ? "-" + date : "") + ".csv";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+
   async function openFile(a) {
     const w = window.open("", "_blank");
     const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(a.path, 600);
@@ -1212,13 +1352,66 @@ main { padding-bottom: 40px; }
     const picker = h("input", { id: "f-files", type: "file", accept: "application/pdf,.pdf", multiple: true, hidden: true });
     const addFileBtn = h("button", { class: "ghost", type: "button", disabled: !canFiles, onclick: () => picker.click(), text: "+ Priložiť PDF" });
     const fileHint = h("span", { class: "hint", text: canFiles ? "Cenové ponuky, faktúry… max " + MAX_MB + " MB" : "Prílohy sa dajú pridávať po prihlásení." });
+    const uploadedFiles = new Map();   // path -> File picked in this dialog, read without downloading
+    const reading = new Set();
+    async function loadItems(a) {
+      if (reading.has(a.path)) return;
+      reading.add(a.path); a._err = ""; drawFiles();
+      try {
+        const f = uploadedFiles.get(a.path);
+        const buf = f ? await f.arrayBuffer() : await fetchAttachment(a);
+        const found = await readQuoteItems(buf);
+        const old = new Map((a.items || []).map(i => [i.name, i.done]));
+        // keep ticks, and keep items that were added by hand
+        a.items = found.map(i => ({ ...i, done: !!old.get(i.name) })).concat((a.items || []).filter(i => i.manual));
+        if (!found.length) a._err = "V tomto PDF som nenašiel tabuľku položiek. Položky môžeš doplniť ručne.";
+        draft.attTouched = true;
+      } catch (e) { a._err = typeof e === "string" ? e : "PDF sa nepodarilo prečítať."; }
+      reading.delete(a.path); drawFiles();
+    }
+    function itemsBlock(a) {
+      const items = a.items || [];
+      const box = h("div", { class: "q-items" });
+      const head = h("div", { class: "q-head" },
+        h("strong", { text: "Na montáž" + (items.length ? " · " + items.length + " " + (items.length === 1 ? "položka" : items.length < 5 ? "položky" : "položiek") : "") }),
+        items.length ? h("span", { class: "hint", text: items.filter(i => i.done).length + " zobraté" }) : null,
+        h("span", { class: "spacer" }),
+        items.length ? h("button", { class: "ghost mini", type: "button", onclick: () => downloadItemsCsv(title.value.trim(), date.value, [{ file: a.name, items }]), text: "Exportovať CSV" }) : null,
+        canFiles ? h("button", { class: "ghost mini", type: "button", disabled: reading.has(a.path), onclick: () => loadItems(a), text: reading.has(a.path) ? "Čítam PDF…" : items.length ? "Načítať znova" : "Načítať položky z PDF" }) : null,
+      );
+      box.append(head);
+      if (a._err) box.append(h("p", { class: "err", text: a._err }));
+      if (items.length) box.append(h("ul", { class: "q-list" }, items.map((it, i) => {
+        const cb = h("input", { type: "checkbox", id: "qi-" + a.path.slice(-12) + "-" + i, "aria-label": "Zobraté: " + it.name });
+        cb.checked = !!it.done;
+        const li = h("li", { class: it.done ? "done" : "" },
+          cb,
+          h("label", { for: cb.id }, h("span", { class: "q-name", text: it.name }), it.qty || it.unit ? h("span", { class: "q-qty", text: [it.qty, it.unit].filter(Boolean).join(" ") }) : null),
+          h("button", { class: "x", type: "button", "aria-label": "Odstrániť položku " + it.name, onclick: () => { a.items.splice(i, 1); draft.attTouched = true; drawFiles(); }, text: "×" }));
+        cb.addEventListener("change", () => { it.done = cb.checked; li.classList.toggle("done", it.done); draft.attTouched = true; drawFiles(); });
+        return li;
+      })));
+      const add = h("input", { type: "text", id: "qadd-" + a.path.slice(-12), placeholder: "Pridať položku ručne a stlačiť Enter", "aria-label": "Pridať položku" });
+      add.addEventListener("keydown", e => {
+        if (e.key !== "Enter") return; e.preventDefault();
+        const v = add.value.trim(); if (!v) return;
+        a.items = a.items || []; a.items.push({ name: v, qty: "", unit: "", done: false, manual: true }); draft.attTouched = true; drawFiles();
+        setTimeout(() => { const el = document.getElementById(add.id); if (el) el.focus(); }, 10);
+      });
+      box.append(h("div", { class: "q-add" }, add));
+      return box;
+    }
     function drawFiles() {
+      const quotes = draft.attachments.filter(a => a.kind === "ponuka" && a.items && a.items.length);
       files.replaceChildren(...draft.attachments.map(a => {
         const kind = h("select", { class: "kind", "aria-label": "Druh prílohy", dataset: { k: a.kind } },
           Object.keys(KINDS).map(k => h("option", { value: k, text: KINDS[k] })));
         kind.value = a.kind;
-        kind.addEventListener("change", () => { a.kind = kind.value; kind.dataset.k = a.kind; draft.attTouched = true; });
-        return h("div", { class: "file" }, kind,
+        kind.addEventListener("change", () => {
+          a.kind = kind.value; kind.dataset.k = a.kind; draft.attTouched = true;
+          if (a.kind === "ponuka" && !a.items && canFiles) loadItems(a); else drawFiles();
+        });
+        const row = h("div", { class: "file" }, kind,
           h("span", { class: "fname", title: a.name }, a.name, h("small", { text: fmtSize(a.size || 0) })),
           h("button", { class: "open", type: "button", onclick: () => openFile(a), text: "Otvoriť" }),
           h("button", { class: "x", type: "button", "aria-label": "Odstrániť prílohu " + a.name, onclick: () => {
@@ -1227,8 +1420,11 @@ main { padding-bottom: 40px; }
             if (i >= 0) { pendingUploads.splice(i, 1); removeFiles([a.path]); } else pendingRemovals.push(a.path);
             drawFiles();
           }, text: "×" }));
+        return a.kind === "ponuka" ? h("div", { class: "file-wrap" }, row, itemsBlock(a)) : row;
       }));
       if (!draft.attachments.length) files.append(h("p", { class: "empty", text: "Žiadne prílohy." }));
+      if (quotes.length > 1) files.append(h("button", { class: "ghost mini q-all", type: "button",
+        onclick: () => downloadItemsCsv(title.value.trim(), date.value, quotes.map(a => ({ file: a.name, items: a.items }))), text: "Exportovať všetky položky (CSV)" }));
     }
     drawFiles();
     picker.addEventListener("change", async () => {
@@ -1240,7 +1436,9 @@ main { padding-bottom: 40px; }
         addFileBtn.textContent = "Nahrávam " + f.name + "…";
         try {
           const a = await uploadPdf(evId, f);
+          uploadedFiles.set(a.path, f);
           pendingUploads.push(a.path); draft.attachments.push(a); draft.attTouched = true; drawFiles();
+          if (a.kind === "ponuka") loadItems(a);
         } catch (msg) { fileErr.textContent = msg; fileErr.hidden = false; }
       }
       busyUploads--;
@@ -1293,6 +1491,7 @@ main { padding-bottom: 40px; }
       if (draft.work && payExtra.value.trim() !== "" && toNum(payExtra.value) === null) { err.textContent = "Sumu v poli Iné zadaj ako číslo, napr. 25 alebo -10."; err.hidden = false; payExtra.focus(); return; }
       if (draft.work && payQty.value.trim() !== "" && (toNum(payQty.value) === null || toNum(payQty.value) < 0)) { err.textContent = "Množstvo zadaj ako číslo, napr. 7,5."; err.hidden = false; payQty.focus(); return; }
       if (busyUploads) { err.textContent = "Počkaj, kým sa dokončí nahrávanie príloh."; err.hidden = false; return; }
+      if (reading.size) { err.textContent = "Počkaj, kým sa dočítajú položky z cenovej ponuky."; err.hidden = false; return; }
       saveBtn.disabled = true; saveBtn.textContent = "Ukladám…";
       try {
         await saveEvent(evId, draft);
