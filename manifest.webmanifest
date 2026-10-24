@@ -1,0 +1,12 @@
+{
+  "name": "Osobný diár",
+  "short_name": "Diár",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#eef1f5",
+  "theme_color": "#2547c4",
+  "lang": "sk",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

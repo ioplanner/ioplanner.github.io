@@ -1,0 +1,762 @@
+<!doctype html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Osobný diár</title>
+<meta name="theme-color" content="#2547c4">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Diár">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: sticky toolbar, one working surface below that switches between month grid, week columns and a three-column board */
+:root {
+  --bg: #eef1f5;
+  --surface: #ffffff;
+  --surface-2: #f6f8fb;
+  --ink: #16202c;
+  --muted: #5b6878;
+  --line: #d9e0e8;
+  --accent: #2547c4;
+  --accent-soft: #e3e9fb;
+  --on-accent: #ffffff;
+  --todo: #64748b;
+  --doing: #b86e00;
+  --done: #2b8553;
+  --danger: #c2341f;
+  --shadow: 0 10px 30px rgba(20, 32, 60, .14);
+  --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Figtree", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1319; --surface: #161d26; --surface-2: #1b2430; --ink: #e5eaf0; --muted: #94a2b2;
+    --line: #283340; --accent: #86a0ff; --accent-soft: #1f2a4a; --on-accent: #0e1319;
+    --todo: #94a3b8; --doing: #f0a63a; --done: #5cc58a; --danger: #ff7a66;
+    --shadow: 0 12px 34px rgba(0, 0, 0, .5); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1319; --surface: #161d26; --surface-2: #1b2430; --ink: #e5eaf0; --muted: #94a2b2;
+  --line: #283340; --accent: #86a0ff; --accent-soft: #1f2a4a; --on-accent: #0e1319;
+  --todo: #94a3b8; --doing: #f0a63a; --done: #5cc58a; --danger: #ff7a66;
+  --shadow: 0 12px 34px rgba(0, 0, 0, .5); color-scheme: dark;
+}
+* { box-sizing: border-box; }
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+[hidden] { display: none !important; }
+body { margin: 0; }
+.gate { max-width: 440px; margin: 40px auto; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 28px; display: flex; flex-direction: column; gap: 14px; }
+.gate h2 { font-family: var(--f-display); margin: 0; font-size: 1.5rem; }
+.gate p { margin: 0; color: var(--muted); }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.45; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.wrap { max-width: 1240px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+.bar .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding-block: 12px; }
+.brand { font-family: var(--f-display); font-weight: 700; font-size: 1.35rem; letter-spacing: -.01em; margin: 0; margin-right: auto; display: flex; align-items: baseline; gap: 8px; }
+.brand small { font-family: var(--f-mono); font-size: .7rem; color: var(--muted); font-weight: 500; letter-spacing: .04em; }
+
+.seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+.seg button { border: 0; background: transparent; padding: 6px 12px; border-radius: 7px; font-weight: 600; font-size: .88rem; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+
+.primary { border: 0; background: var(--accent); color: var(--on-accent); font-weight: 600; padding: 8px 14px; border-radius: 10px; }
+.ghost { border: 1px solid var(--line); background: var(--surface); padding: 7px 12px; border-radius: 10px; font-weight: 500; }
+.icon-btn { border: 1px solid var(--line); background: var(--surface); width: 36px; height: 36px; border-radius: 10px; display: inline-grid; place-items: center; font-size: 1.1rem; line-height: 1; }
+
+.nav { display: flex; align-items: center; gap: 8px; padding-block: 18px 12px; flex-wrap: wrap; }
+.period { font-family: var(--f-display); font-weight: 700; font-size: 1.6rem; letter-spacing: -.015em; margin: 0 auto 0 4px; text-wrap: balance; }
+.period span { color: var(--muted); font-weight: 500; }
+
+.notice { margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: var(--accent-soft); color: var(--ink); font-size: .9rem; }
+
+/* Month */
+.dow { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin-bottom: 6px; }
+.dow div { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; padding-left: 8px; }
+.month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.cell { min-width: 0; min-height: 104px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 6px; display: flex; flex-direction: column; gap: 4px; text-align: left; }
+.cell.out { background: transparent; border-style: dashed; }
+.cell.out .num { color: var(--muted); opacity: .7; }
+.cell.sel { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.num { font-family: var(--f-mono); font-size: .8rem; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; }
+.cell.today .num { background: var(--accent); color: var(--on-accent); }
+.chip { display: block; min-width: 0; font-size: .76rem; padding: 2px 6px; border-radius: 5px; background: var(--surface-2); border-left: 3px solid var(--todo); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chip[data-s="doing"] { border-left-color: var(--doing); }
+.chip[data-s="done"] { border-left-color: var(--done); color: var(--muted); text-decoration: line-through; }
+.chip b { font-family: var(--f-mono); font-weight: 500; font-size: .7rem; color: var(--muted); margin-right: 4px; }
+.more { font-size: .72rem; color: var(--muted); padding-left: 4px; }
+.dots { display: none; gap: 3px; flex-wrap: wrap; padding-left: 4px; }
+.dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--todo); }
+.dots i[data-s="doing"] { background: var(--doing); }
+.dots i[data-s="done"] { background: var(--done); }
+
+.agenda { margin-top: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+.agenda-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.agenda-head h2 { font-family: var(--f-display); font-size: 1.15rem; margin: 0 auto 0 0; }
+
+/* Cards */
+.list { display: flex; flex-direction: column; gap: 8px; }
+.card { min-width: 0; width: 100%; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: start; }
+.card:hover { border-color: var(--accent); }
+.card .t { font-family: var(--f-mono); font-size: .76rem; color: var(--muted); padding-top: 2px; min-width: 42px; }
+.card .ttl { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.card .meta { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: .78rem; color: var(--muted); }
+.card[data-s="done"] .ttl { text-decoration: line-through; color: var(--muted); }
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: .72rem; font-weight: 600; letter-spacing: .02em; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pill[data-s="todo"] { color: var(--todo); }
+.pill[data-s="doing"] { color: var(--doing); }
+.pill[data-s="done"] { color: var(--done); }
+.prog { font-family: var(--f-mono); }
+.empty { color: var(--muted); font-size: .9rem; padding: 10px 2px; }
+
+/* Week */
+.week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.wday { min-width: 0; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 8px; min-height: 260px; }
+.wday.today { border-color: var(--accent); }
+.wday-h { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.wday-h strong { font-family: var(--f-display); font-size: 1rem; }
+.wday-h span { font-family: var(--f-mono); font-size: .75rem; color: var(--muted); }
+.wday.today .wday-h span { color: var(--accent); }
+.add-mini { border: 1px dashed var(--line); background: transparent; color: var(--muted); border-radius: 8px; padding: 4px; font-size: .8rem; margin-top: auto; }
+.add-mini:hover { color: var(--accent); border-color: var(--accent); }
+.week .card { grid-template-columns: 1fr; padding: 8px 10px; }
+.week .card .t { min-width: 0; }
+.week .card .meta { grid-column: 1; }
+
+/* Board */
+.board-tools { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; font-size: .88rem; color: var(--muted); }
+.board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.col { min-width: 0; background: var(--surface-2); border: 1px solid var(--line); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 8px; min-height: 200px; border-top: 4px solid var(--todo); }
+.col[data-s="doing"] { border-top-color: var(--doing); }
+.col[data-s="done"] { border-top-color: var(--done); }
+.col.over { outline: 2px dashed var(--accent); outline-offset: -4px; }
+.col-h { display: flex; align-items: baseline; justify-content: space-between; padding: 2px 4px 4px; }
+.col-h h3 { margin: 0; font-family: var(--f-display); font-size: 1.05rem; }
+.col-h span { font-family: var(--f-mono); font-size: .8rem; color: var(--muted); }
+.board .card { cursor: grab; }
+.board .card.dragging { opacity: .45; }
+.move { display: inline-flex; gap: 4px; margin-left: auto; }
+.move button { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; font-size: .75rem; padding: 0 6px; line-height: 1.6; }
+
+/* Modal */
+.overlay { position: fixed; inset: 0; z-index: 20; background: rgba(10, 15, 25, .45); display: grid; place-items: center; padding: 16px; padding-top: max(16px, env(safe-area-inset-top, 0px)); padding-bottom: max(16px, env(safe-area-inset-bottom, 0px)); }
+.modal { width: min(560px, 100%); max-height: 100%; overflow: auto; background: var(--surface); border-radius: 16px; box-shadow: var(--shadow); padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.modal h2 { margin: 0; font-family: var(--f-display); font-size: 1.3rem; }
+.field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.field label, .lbl { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.field input, .field select, .field textarea { width: 100%; border: 1px solid var(--line); background: var(--surface-2); border-radius: 9px; padding: 9px 10px; min-width: 0; }
+.field textarea { min-height: 90px; resize: vertical; }
+.row { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 10px; }
+.status-pick { display: flex; gap: 6px; flex-wrap: wrap; }
+.status-pick button { border: 1px solid var(--line); background: var(--surface-2); border-radius: 999px; padding: 5px 12px; font-size: .85rem; font-weight: 600; color: var(--muted); }
+.status-pick button[aria-pressed="true"][data-s="todo"] { color: var(--todo); border-color: currentColor; background: var(--surface); }
+.status-pick button[aria-pressed="true"][data-s="doing"] { color: var(--doing); border-color: currentColor; background: var(--surface); }
+.status-pick button[aria-pressed="true"][data-s="done"] { color: var(--done); border-color: currentColor; background: var(--surface); }
+.checks { display: flex; flex-direction: column; gap: 6px; }
+.check { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; }
+.check input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
+.check input[type="text"] { border: 0; border-bottom: 1px solid transparent; background: transparent; padding: 4px 2px; min-width: 0; }
+.check input[type="text"]:focus { border-bottom-color: var(--line); outline: none; }
+.check.done input[type="text"] { text-decoration: line-through; color: var(--muted); }
+.check .x { border: 0; background: transparent; color: var(--muted); font-size: 1.1rem; padding: 0 6px; }
+.add-check { display: flex; gap: 8px; }
+.add-check input { flex: 1; min-width: 0; border: 1px dashed var(--line); background: transparent; border-radius: 8px; padding: 7px 10px; }
+.modal-foot { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding-top: 4px; }
+.modal-foot .spacer { flex: 1; }
+.danger { border: 1px solid var(--line); background: transparent; color: var(--danger); padding: 7px 12px; border-radius: 10px; font-weight: 500; }
+.danger.armed { background: var(--danger); color: var(--surface); border-color: var(--danger); }
+.err { color: var(--danger); font-size: .85rem; }
+
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 10px; font-size: .88rem; z-index: 30; box-shadow: var(--shadow); }
+
+main { padding-bottom: 40px; }
+
+@media (max-width: 900px) {
+  .week { grid-template-columns: minmax(0, 1fr); }
+  .wday { min-height: 0; }
+  .board { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 620px) {
+  .cell { min-height: 58px; padding: 4px; }
+  .chip, .more { display: none; }
+  .dots { display: flex; }
+  .num { width: 24px; height: 24px; font-size: .74rem; }
+  .dow { gap: 3px; } .month { gap: 3px; }
+  .dow div { padding-left: 2px; font-size: .64rem; letter-spacing: .04em; }
+  .period { font-size: 1.3rem; width: 100%; order: -1; margin: 0 0 4px; }
+  .row { grid-template-columns: 1fr 1fr; }
+  .row .field:first-child { grid-column: 1 / -1; }
+  .brand small { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+</head>
+<body>
+
+<header class="bar">
+  <div class="wrap">
+    <h1 class="brand">Osobný diár <small id="sync">načítavam…</small></h1>
+    <div class="seg" role="group" aria-label="Pohľad">
+      <button id="v-month" data-v="month">Mesiac</button>
+      <button id="v-week" data-v="week">Týždeň</button>
+      <button id="v-board" data-v="board">Nástenka</button>
+    </div>
+    <button class="primary" id="new-btn">+ Nová akcia</button>
+    <button class="ghost" id="auth-btn" hidden>Odhlásiť</button>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="nav">
+    <h2 class="period" id="period"></h2>
+    <button class="icon-btn" id="prev" aria-label="Predchádzajúce">‹</button>
+    <button class="ghost" id="today-btn">Dnes</button>
+    <button class="icon-btn" id="next" aria-label="Nasledujúce">›</button>
+  </div>
+  <p class="notice" id="notice" hidden></p>
+  <section id="view"></section>
+</main>
+
+<div id="modal-root"></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function () {
+  // ===== NASTAVENIE: sem vlož údaje zo Supabase (pozri NAVOD.md, krok 3) =====
+  const SUPABASE_URL = "https://mtifpeafpmkeimqiqfym.supabase.co";
+  const SUPABASE_KEY = "VLOZ_SEM";   // "anon" / "publishable" kľúč
+  // ===========================================================================
+
+  const MONTHS = ["január","február","marec","apríl","máj","jún","júl","august","september","október","november","december"];
+  const MONTHS_GEN = ["januára","februára","marca","apríla","mája","júna","júla","augusta","septembra","októbra","novembra","decembra"];
+  const DOW = ["Po","Ut","St","Št","Pi","So","Ne"];
+  const DOW_LONG = ["pondelok","utorok","streda","štvrtok","piatok","sobota","nedeľa"];
+  const STATUS = { todo: "Naplánované", doing: "Prebieha", done: "Hotovo" };
+  const ORDER = ["todo", "doing", "done"];
+
+  const pad = n => String(n).padStart(2, "0");
+  const iso = d => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+  const parse = s => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+  const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+  const mondayOf = d => addDays(d, -((d.getDay() + 6) % 7));
+  const todayIso = () => iso(new Date());
+  const dowIdx = d => (d.getDay() + 6) % 7;
+  const fmtDay = s => { const d = parse(s); return DOW_LONG[dowIdx(d)] + " " + d.getDate() + ". " + MONTHS_GEN[d.getMonth()]; };
+  const fmtShort = s => { const d = parse(s); return d.getDate() + ". " + (d.getMonth() + 1) + "."; };
+
+  function h(tag, props, ...kids) {
+    const el = document.createElement(tag);
+    if (props) for (const k in props) {
+      const v = props[k];
+      if (v == null || v === false) continue;
+      if (k === "class") el.className = v;
+      else if (k === "text") el.textContent = v;
+      else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+      else if (k === "dataset") Object.assign(el.dataset, v);
+      else el.setAttribute(k, v === true ? "" : v);
+    }
+    for (const c of kids.flat()) if (c != null && c !== false) el.append(c.nodeType ? c : String(c));
+    return el;
+  }
+
+  // ---------- State ----------
+  const state = {
+    view: "month",
+    cursor: new Date(),
+    selected: todayIso(),
+    boardScope: "upcoming",
+    events: new Map(),
+  };
+  try { const v = localStorage.getItem("diar.view"); if (v) state.view = v; } catch (e) {}
+  const hashMap = { mesiac: "month", tyzden: "week", nastenka: "board" };
+  if (hashMap[location.hash.slice(1)]) state.view = hashMap[location.hash.slice(1)];
+
+  let sb = null;         // Supabase client
+  let uid = null;        // signed-in user id
+  let readOnly = false;
+  let localMode = false; // no Supabase: keep events in this browser only
+  state.gate = false;
+  function saveLocal() {
+    if (!localMode) return;
+    try { localStorage.setItem("diar.events", JSON.stringify([...state.events.values()])); } catch (e) {}
+  }
+
+  function sortEvents(list) {
+    return list.sort((a, b) => (a.date + (a.time || "99")).localeCompare(b.date + (b.time || "99")) || a.title.localeCompare(b.title));
+  }
+  function eventsOn(dateStr) { return sortEvents([...state.events.values()].filter(e => e.date === dateStr)); }
+
+  // ---------- Toast ----------
+  let toastTimer;
+  function toast(msg) {
+    const t = document.getElementById("toast");
+    t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2200);
+  }
+
+  // ---------- Storage ----------
+  function clean(ev) {
+    return {
+      title: ev.title, date: ev.date, time: ev.time || "", end: ev.end || "",
+      status: ev.status, notes: ev.notes || "",
+      checklist: (ev.checklist || []).filter(c => c.text.trim()).map(c => ({ id: c.id, text: c.text.trim(), done: !!c.done })),
+      updated: Date.now(),
+    };
+  }
+  const newId = () => (crypto.randomUUID ? crypto.randomUUID() :
+    "10000000-1000-4000-8000-100000000000".replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)));
+  const toRow = (id, d) => ({
+    id, title: d.title, event_date: d.date, start_time: d.time || null, end_time: d.end || null,
+    status: d.status, notes: d.notes, checklist: d.checklist,
+  });
+  const fromRow = r => ({
+    id: r.id, title: r.title, date: r.event_date, time: (r.start_time || "").slice(0, 5), end: (r.end_time || "").slice(0, 5),
+    status: r.status || "todo", notes: r.notes || "", checklist: Array.isArray(r.checklist) ? r.checklist : [],
+  });
+  function cacheEvents() {
+    if (!uid) return;
+    try { localStorage.setItem("diar.cache." + uid, JSON.stringify([...state.events.values()])); } catch (e) {}
+  }
+
+  async function saveEvent(id, ev) {
+    const data = clean(ev);
+    if (!sb || !uid) {
+      const nid = id || newId();
+      state.events.set(nid, { id: nid, ...data }); saveLocal(); render(); return;
+    }
+    const nid = id || newId();
+    const { error } = await sb.from("events").upsert(toRow(nid, data));
+    if (error) throw friendly(error);
+    state.events.set(nid, { id: nid, ...data }); cacheEvents(); render();
+  }
+  async function removeEvent(id) {
+    if (!sb || !uid) { state.events.delete(id); saveLocal(); render(); return; }
+    const { error } = await sb.from("events").delete().eq("id", id);
+    if (error) throw friendly(error);
+    state.events.delete(id); cacheEvents(); render();
+  }
+  function friendly(e) {
+    const msg = (e && (e.message || "")) + "";
+    if (e && e.code === "42501" || /row-level security/i.test(msg)) return "Databáza zápis odmietla. Skontroluj, či si spustil SQL z kroku 2 v návode.";
+    if (e && e.code === "42P01" || /relation .* does not exist/i.test(msg)) return "V databáze chýba tabuľka. Spusti SQL z kroku 2 v návode.";
+    if (/JWT|expired/i.test(msg)) return "Prihlásenie vypršalo. Obnov stránku a prihlás sa znova.";
+    if (/fetch|network/i.test(msg)) return "Si offline. Zmenu sa nepodarilo uložiť, skús to po pripojení.";
+    return "Nepodarilo sa uložiť: " + (msg || "neznáma chyba");
+  }
+
+  // ---------- Rendering ----------
+  const viewEl = document.getElementById("view");
+  const periodEl = document.getElementById("period");
+
+  function card(ev, opts = {}) {
+    const total = ev.checklist ? ev.checklist.length : 0;
+    const doneN = total ? ev.checklist.filter(c => c.done).length : 0;
+    const c = h("button", {
+      class: "card", type: "button", dataset: { s: ev.status, id: ev.id },
+      onclick: () => openEditor(ev.id),
+    },
+      opts.showDate ? null : h("span", { class: "t", text: ev.time ? ev.time + (ev.end ? "–" + ev.end : "") : "celý deň" }),
+      h("span", { class: "ttl", text: ev.title }),
+      h("span", { class: "meta" },
+        opts.showDate ? h("span", { class: "prog", text: fmtShort(ev.date) + (ev.time ? " · " + ev.time : "") }) : null,
+        opts.pill !== false ? h("span", { class: "pill", dataset: { s: ev.status }, text: STATUS[ev.status] }) : null,
+        total ? h("span", { class: "prog", text: "☑ " + doneN + "/" + total }) : null,
+        ev.notes ? h("span", { text: "poznámka" }) : null,
+        opts.move ? opts.move : null,
+      ),
+    );
+    if (opts.showDate) { c.style.gridTemplateColumns = "1fr"; c.querySelector(".meta").style.gridColumn = "1"; }
+    return c;
+  }
+
+  function renderMonth() {
+    const c = state.cursor;
+    periodEl.replaceChildren(MONTHS[c.getMonth()].replace(/^./, m => m.toUpperCase()) + " ", h("span", { text: c.getFullYear() }));
+    const first = new Date(c.getFullYear(), c.getMonth(), 1);
+    const start = mondayOf(first);
+    const last = new Date(c.getFullYear(), c.getMonth() + 1, 0);
+    const end = addDays(mondayOf(last), 6);
+    const grid = h("div", { class: "month" });
+    const t = todayIso();
+    for (let d = start; d <= end; d = addDays(d, 1)) {
+      const ds = iso(d);
+      const evs = eventsOn(ds);
+      const cls = ["cell"];
+      if (d.getMonth() !== c.getMonth()) cls.push("out");
+      if (ds === t) cls.push("today");
+      if (ds === state.selected) cls.push("sel");
+      const cell = h("div", {
+        class: cls.join(" "), role: "button", tabindex: "0",
+        "aria-label": fmtDay(ds) + ", akcií: " + evs.length,
+        onclick: () => { state.selected = ds; render(); },
+        onkeydown: e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); state.selected = ds; render(); } },
+        ondblclick: () => openEditor(null, ds),
+      }, h("span", { class: "num", text: d.getDate() }));
+      evs.slice(0, 3).forEach(ev => cell.append(h("span", {
+        class: "chip", dataset: { s: ev.status }, title: ev.title,
+        onclick: e => { e.stopPropagation(); openEditor(ev.id); },
+      }, ev.time ? h("b", { text: ev.time }) : null, ev.title)));
+      if (evs.length > 3) cell.append(h("span", { class: "more", text: "+ ďalšie " + (evs.length - 3) }));
+      if (evs.length) cell.append(h("span", { class: "dots" }, evs.slice(0, 6).map(ev => h("i", { dataset: { s: ev.status } }))));
+      grid.append(cell);
+    }
+    const sel = state.selected;
+    const selEvs = eventsOn(sel);
+    const agenda = h("div", { class: "agenda" },
+      h("div", { class: "agenda-head" },
+        h("h2", { text: fmtDay(sel).replace(/^./, m => m.toUpperCase()) }),
+        h("button", { class: "ghost", type: "button", onclick: () => openEditor(null, sel), text: "+ Pridať na tento deň" }),
+      ),
+      selEvs.length ? h("div", { class: "list" }, selEvs.map(ev => card(ev))) :
+        h("p", { class: "empty", text: "Na tento deň nemáš nič naplánované." }),
+    );
+    viewEl.replaceChildren(h("div", { class: "dow" }, DOW.map(x => h("div", { text: x }))), grid, agenda);
+  }
+
+  function renderWeek() {
+    const mon = mondayOf(state.cursor);
+    const sun = addDays(mon, 6);
+    const sameMonth = mon.getMonth() === sun.getMonth();
+    periodEl.replaceChildren(
+      mon.getDate() + "." + (sameMonth ? "" : " " + MONTHS_GEN[mon.getMonth()]) + " – " + sun.getDate() + ". " + MONTHS_GEN[sun.getMonth()] + " ",
+      h("span", { text: sun.getFullYear() }),
+    );
+    const t = todayIso();
+    const week = h("div", { class: "week" });
+    for (let i = 0; i < 7; i++) {
+      const d = addDays(mon, i), ds = iso(d);
+      const evs = eventsOn(ds);
+      week.append(h("div", { class: "wday" + (ds === t ? " today" : "") },
+        h("div", { class: "wday-h" }, h("strong", { text: DOW_LONG[i].replace(/^./, m => m.toUpperCase()) }), h("span", { text: fmtShort(ds) })),
+        evs.map(ev => card(ev, { pill: true })),
+        h("button", { class: "add-mini", type: "button", onclick: () => openEditor(null, ds), text: "+ pridať" }),
+      ));
+    }
+    viewEl.replaceChildren(week);
+  }
+
+  function renderBoard() {
+    periodEl.replaceChildren("Nástenka ", h("span", { text: state.boardScope === "upcoming" ? "od dnes" : "všetko" }));
+    const t = todayIso();
+    let all = sortEvents([...state.events.values()]);
+    if (state.boardScope === "upcoming") all = all.filter(e => e.date >= t || e.status !== "done");
+    const tools = h("div", { class: "board-tools" },
+      h("span", { text: "Zobraziť:" }),
+      h("div", { class: "seg", role: "group", "aria-label": "Rozsah nástenky" },
+        h("button", { id: "scope-up", "aria-pressed": String(state.boardScope === "upcoming"), onclick: () => { state.boardScope = "upcoming"; render(); }, text: "Aktuálne" }),
+        h("button", { id: "scope-all", "aria-pressed": String(state.boardScope === "all"), onclick: () => { state.boardScope = "all"; render(); }, text: "Všetko" }),
+      ),
+      h("span", { text: "Presúvaj karty potiahnutím alebo šípkami." }),
+    );
+    const board = h("div", { class: "board" });
+    ORDER.forEach((s, idx) => {
+      const items = all.filter(e => e.status === s);
+      const col = h("div", { class: "col", dataset: { s },
+        ondragover: e => { e.preventDefault(); col.classList.add("over"); },
+        ondragleave: () => col.classList.remove("over"),
+        ondrop: e => { e.preventDefault(); col.classList.remove("over"); const id = e.dataTransfer.getData("text/plain"); setStatus(id, s); },
+      },
+        h("div", { class: "col-h" }, h("h3", { text: STATUS[s] }), h("span", { text: items.length })),
+        items.length ? null : h("p", { class: "empty", text: s === "done" ? "Sem presuň, čo je vybavené." : "Prázdne." }),
+      );
+      items.forEach(ev => {
+        const move = h("span", { class: "move" },
+          idx > 0 ? h("button", { type: "button", "aria-label": "Presunúť do " + STATUS[ORDER[idx - 1]], onclick: e => { e.stopPropagation(); setStatus(ev.id, ORDER[idx - 1]); }, text: "←" }) : null,
+          idx < 2 ? h("button", { type: "button", "aria-label": "Presunúť do " + STATUS[ORDER[idx + 1]], onclick: e => { e.stopPropagation(); setStatus(ev.id, ORDER[idx + 1]); }, text: "→" }) : null,
+        );
+        const c = card(ev, { showDate: true, pill: false, move });
+        c.draggable = true;
+        c.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", ev.id); c.classList.add("dragging"); });
+        c.addEventListener("dragend", () => c.classList.remove("dragging"));
+        col.append(c);
+      });
+      board.append(col);
+    });
+    viewEl.replaceChildren(tools, board);
+  }
+
+  async function setStatus(id, s) {
+    const ev = state.events.get(id);
+    if (!ev || ev.status === s) return;
+    try { await saveEvent(id, { ...ev, status: s }); toast("Presunuté: " + STATUS[s]); }
+    catch (msg) { toast(msg); }
+  }
+
+  let signUpMode = false;
+  function renderGate() {
+    periodEl.replaceChildren();
+    const err = h("p", { class: "err", id: "login-err", hidden: true });
+    const info = h("p", { id: "login-info", hidden: true });
+    const email = h("input", { id: "l-email", type: "email", autocomplete: "email", required: true, placeholder: "ty@example.sk" });
+    const pass = h("input", { id: "l-pass", type: "password", autocomplete: signUpMode ? "new-password" : "current-password", required: true, minlength: "6" });
+    const btn = h("button", { class: "primary", type: "submit", text: signUpMode ? "Vytvoriť účet" : "Prihlásiť sa" });
+    const form = h("form", { class: "gate" },
+      h("h2", { text: signUpMode ? "Nový účet" : "Prihlás sa" }),
+      h("p", { text: "Akcie sa ukladajú do tvojej databázy. Uvidíš ich na každom zariadení, kde sa prihlásiš tým istým e-mailom." }),
+      h("div", { class: "field" }, h("label", { for: "l-email", text: "E-mail" }), email),
+      h("div", { class: "field" }, h("label", { for: "l-pass", text: signUpMode ? "Heslo (aspoň 6 znakov)" : "Heslo" }), pass),
+      err, info, btn,
+      h("button", { class: "ghost", type: "button", onclick: () => { signUpMode = !signUpMode; renderGate(); },
+        text: signUpMode ? "Už mám účet, prihlásiť sa" : "Nemám účet, vytvoriť nový" }),
+    );
+    form.addEventListener("submit", async e => {
+      e.preventDefault();
+      err.hidden = true; info.hidden = true; btn.disabled = true;
+      const creds = { email: email.value.trim(), password: pass.value };
+      const res = signUpMode ? await sb.auth.signUp(creds) : await sb.auth.signInWithPassword(creds);
+      btn.disabled = false;
+      if (res.error) { err.textContent = loginMsg(res.error); err.hidden = false; return; }
+      if (signUpMode && !res.data.session) {
+        info.textContent = "Účet je vytvorený. Otvor e-mail od Supabase, potvrď adresu a potom sa tu prihlás.";
+        info.hidden = false; signUpMode = false;
+      }
+    });
+    viewEl.replaceChildren(form);
+  }
+  function loginMsg(e) {
+    const m = (e.message || "") + "";
+    if (/invalid login credentials/i.test(m)) return "Nesprávny e-mail alebo heslo.";
+    if (/email not confirmed/i.test(m)) return "E-mail ešte nie je potvrdený. Klikni na odkaz v e-maile od Supabase.";
+    if (/signups? not allowed|signup is disabled/i.test(m)) return "Registrácia nových účtov je vypnutá.";
+    if (/already registered/i.test(m)) return "Tento e-mail už má účet. Prihlás sa.";
+    if (/rate limit/i.test(m)) return "Príliš veľa pokusov. Skús to o chvíľu.";
+    if (/password/i.test(m)) return "Heslo musí mať aspoň 6 znakov.";
+    if (/fetch/i.test(m)) return "Nepodarilo sa spojiť so Supabase. Skontroluj pripojenie a adresu v nastavení.";
+    return "Prihlásenie zlyhalo: " + m;
+  }
+
+  function render() {
+    document.querySelectorAll(".bar .seg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === state.view)));
+    document.getElementById("new-btn").hidden = state.gate;
+    if (state.gate) { ["prev", "next", "today-btn"].forEach(id => document.getElementById(id).hidden = true); renderGate(); return; }
+    const nav = !(state.view === "board");
+    ["prev", "next", "today-btn"].forEach(id => document.getElementById(id).hidden = !nav);
+    if (state.view === "week") renderWeek();
+    else if (state.view === "board") renderBoard();
+    else renderMonth();
+  }
+
+  // ---------- Editor ----------
+  function openEditor(id, dateStr) {
+    if (readOnly) { toast("Tento diár môžeš len prezerať."); }
+    const src = id ? state.events.get(id) : null;
+    const draft = src ? JSON.parse(JSON.stringify(src)) : {
+      title: "", date: dateStr || state.selected || todayIso(), time: "", end: "", status: "todo", notes: "", checklist: [],
+    };
+    draft.checklist = draft.checklist || [];
+    const root = document.getElementById("modal-root");
+    const err = h("p", { class: "err", hidden: true });
+
+    const title = h("input", { id: "f-title", type: "text", value: draft.title, placeholder: "Napr. Zubár, Narodeniny mamy…", maxlength: "140" });
+    const date = h("input", { id: "f-date", type: "date", value: draft.date });
+    const time = h("input", { id: "f-time", type: "time", value: draft.time });
+    const end = h("input", { id: "f-end", type: "time", value: draft.end });
+    const notes = h("textarea", { id: "f-notes", placeholder: "Adresa, čo si zobrať, kontakt…" });
+    notes.value = draft.notes || "";
+
+    const statusBox = h("div", { class: "status-pick", role: "group", "aria-label": "Stav" });
+    function drawStatus() {
+      statusBox.replaceChildren(...ORDER.map(s => h("button", {
+        type: "button", dataset: { s }, "aria-pressed": String(draft.status === s),
+        onclick: () => { draft.status = s; drawStatus(); }, text: STATUS[s],
+      })));
+    }
+    drawStatus();
+
+    const checks = h("div", { class: "checks" });
+    function drawChecks() {
+      checks.replaceChildren(...draft.checklist.map(item => {
+        const cb = h("input", { type: "checkbox", id: "c-" + item.id, "aria-label": "Splnené" });
+        cb.checked = !!item.done;
+        const tx = h("input", { type: "text", id: "ct-" + item.id, value: item.text, "aria-label": "Položka" });
+        const row = h("div", { class: "check" + (item.done ? " done" : "") }, cb, tx,
+          h("button", { class: "x", type: "button", "aria-label": "Odstrániť položku", onclick: () => { draft.checklist = draft.checklist.filter(c => c !== item); drawChecks(); }, text: "×" }));
+        cb.addEventListener("change", () => { item.done = cb.checked; row.classList.toggle("done", item.done); });
+        tx.addEventListener("input", () => { item.text = tx.value; });
+        return row;
+      }));
+    }
+    drawChecks();
+    const newCheck = h("input", { id: "f-newcheck", type: "text", placeholder: "Pridať položku a stlačiť Enter" });
+    const addCheck = () => {
+      const v = newCheck.value.trim(); if (!v) return;
+      draft.checklist.push({ id: Math.random().toString(36).slice(2, 9), text: v, done: false });
+      newCheck.value = ""; drawChecks(); newCheck.focus();
+    };
+    newCheck.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addCheck(); } });
+
+    const saveBtn = h("button", { class: "primary", type: "submit", text: src ? "Uložiť zmeny" : "Pridať akciu" });
+    let armed = false;
+    const delBtn = src ? h("button", { class: "danger", type: "button", text: "Vymazať", onclick: async () => {
+      if (!armed) { armed = true; delBtn.classList.add("armed"); delBtn.textContent = "Naozaj vymazať?"; return; }
+      try { await removeEvent(id); close(); toast("Akcia vymazaná"); } catch (msg) { err.textContent = msg; err.hidden = false; }
+    } }) : null;
+
+    const form = h("form", { class: "modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "m-title" },
+      h("h2", { id: "m-title", text: src ? "Upraviť akciu" : "Nová akcia" }),
+      h("div", { class: "field" }, h("label", { for: "f-title", text: "Názov" }), title),
+      h("div", { class: "row" },
+        h("div", { class: "field" }, h("label", { for: "f-date", text: "Dátum" }), date),
+        h("div", { class: "field" }, h("label", { for: "f-time", text: "Od" }), time),
+        h("div", { class: "field" }, h("label", { for: "f-end", text: "Do" }), end),
+      ),
+      h("div", { class: "field" }, h("span", { class: "lbl", text: "Stav" }), statusBox),
+      h("div", { class: "field" }, h("label", { for: "f-notes", text: "Poznámky" }), notes),
+      h("div", { class: "field" }, h("span", { class: "lbl", text: "Checklist" }), checks,
+        h("div", { class: "add-check" }, newCheck, h("button", { class: "ghost", type: "button", onclick: addCheck, text: "Pridať" }))),
+      err,
+      h("div", { class: "modal-foot" }, delBtn, h("span", { class: "spacer" }),
+        h("button", { class: "ghost", type: "button", onclick: () => close(), text: "Zrušiť" }), saveBtn),
+    );
+    form.addEventListener("submit", async e => {
+      e.preventDefault();
+      draft.title = title.value.trim(); draft.date = date.value; draft.time = time.value; draft.end = end.value; draft.notes = notes.value;
+      if (newCheck.value.trim()) addCheck();
+      if (!draft.title) { err.textContent = "Zadaj názov akcie."; err.hidden = false; title.focus(); return; }
+      if (!draft.date) { err.textContent = "Vyber dátum."; err.hidden = false; return; }
+      if (draft.end && !draft.time) draft.end = "";
+      saveBtn.disabled = true; saveBtn.textContent = "Ukladám…";
+      try {
+        await saveEvent(src ? id : null, draft);
+        state.selected = draft.date;
+        const d = parse(draft.date);
+        if (state.view === "month" && (d.getMonth() !== state.cursor.getMonth() || d.getFullYear() !== state.cursor.getFullYear())) state.cursor = d;
+        close(); toast(src ? "Uložené" : "Akcia pridaná");
+      } catch (msg) {
+        err.textContent = msg; err.hidden = false; saveBtn.disabled = false; saveBtn.textContent = src ? "Uložiť zmeny" : "Pridať akciu";
+      }
+    });
+
+    const overlay = h("div", { class: "overlay", onclick: e => { if (e.target === overlay) close(); } }, form);
+    function onKey(e) { if (e.key === "Escape") close(); }
+    function close() { document.removeEventListener("keydown", onKey); root.replaceChildren(); render(); }
+    document.addEventListener("keydown", onKey);
+    root.replaceChildren(overlay);
+    if (!src) setTimeout(() => title.focus(), 30);
+  }
+
+  // ---------- Controls ----------
+  document.querySelectorAll(".bar .seg button").forEach(b => b.addEventListener("click", () => {
+    state.view = b.dataset.v;
+    try { localStorage.setItem("diar.view", state.view); } catch (e) {}
+    render();
+  }));
+  document.getElementById("new-btn").addEventListener("click", () => openEditor(null));
+  document.getElementById("prev").addEventListener("click", () => step(-1));
+  document.getElementById("next").addEventListener("click", () => step(1));
+  document.getElementById("today-btn").addEventListener("click", () => { state.cursor = new Date(); state.selected = todayIso(); render(); });
+  function step(dir) {
+    const c = state.cursor;
+    if (state.view === "week") state.cursor = addDays(c, 7 * dir);
+    else state.cursor = new Date(c.getFullYear(), c.getMonth() + dir, 1);
+  if (state.view === "week") state.selected = iso(mondayOf(state.cursor));
+    render();
+  }
+
+  render();
+
+  // ---------- Connect store ----------
+  const syncEl = document.getElementById("sync");
+  const notice = document.getElementById("notice");
+  function offline(msg) {
+    syncEl.textContent = "neuložené";
+    notice.textContent = msg; notice.hidden = false;
+  }
+  const authBtn = document.getElementById("auth-btn");
+  const modalOpen = () => document.getElementById("modal-root").children.length > 0;
+
+  const configured = /^https:\/\//.test(SUPABASE_URL) && SUPABASE_KEY && !SUPABASE_KEY.startsWith("VLOZ");
+  if (!configured || !window.supabase) {
+    // Local mode: works right away, but only in this browser
+    localMode = true;
+    try {
+      const saved = JSON.parse(localStorage.getItem("diar.events") || "[]");
+      saved.forEach(e => { if (e && e.id && e.title) state.events.set(e.id, e); });
+    } catch (e) {}
+    syncEl.textContent = "len toto zariadenie";
+    notice.textContent = !window.supabase && configured
+      ? "Nepodarilo sa načítať Supabase (si offline?). Diár teraz ukladá len do tohto prehliadača."
+      : "Diár zatiaľ ukladá len do tohto prehliadača. Aby sa akcie synchronizovali medzi zariadeniami, nastav Supabase podľa návodu (NAVOD.md).";
+    notice.hidden = false;
+    render();
+    return;
+  }
+
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+  });
+  syncEl.textContent = "pripájam…";
+
+  authBtn.addEventListener("click", async () => {
+    if (authBtn.dataset.armed) { delete authBtn.dataset.armed; authBtn.textContent = "Odhlásiť"; await sb.auth.signOut(); return; }
+    authBtn.dataset.armed = "1"; authBtn.textContent = "Naozaj odhlásiť?";
+    setTimeout(() => { delete authBtn.dataset.armed; authBtn.textContent = "Odhlásiť"; }, 3000);
+  });
+
+  let channel = null;
+  let loadTimer = null;
+  async function loadAll() {
+    if (!uid) return;
+    const { data, error } = await sb.from("events").select("*").order("event_date").limit(5000);
+    if (error) {
+      syncEl.textContent = "offline";
+      if (!/fetch/i.test(error.message || "")) offline(friendly(error));
+      return;
+    }
+    notice.hidden = true;
+    state.events = new Map(data.map(r => [r.id, fromRow(r)]));
+    cacheEvents();
+    syncEl.textContent = "synchronizované";
+    if (!modalOpen()) render();
+  }
+  const scheduleLoad = () => { clearTimeout(loadTimer); loadTimer = setTimeout(loadAll, 250); };
+
+  function startSession(user) {
+    if (user && user.id === uid) return;          // token refresh, same person
+    if (channel) { sb.removeChannel(channel); channel = null; }
+    uid = user ? user.id : null;
+    notice.hidden = true;
+    if (!uid) {
+      state.events = new Map(); state.gate = true;
+      authBtn.hidden = true; syncEl.textContent = "neprihlásený";
+      render(); return;
+    }
+    state.gate = false;
+    authBtn.hidden = false; authBtn.title = user.email || "";
+    // show the last known events right away, then refresh from the database
+    try {
+      const cached = JSON.parse(localStorage.getItem("diar.cache." + uid) || "[]");
+      state.events = new Map(cached.filter(e => e && e.id).map(e => [e.id, e]));
+    } catch (e) { state.events = new Map(); }
+    render();
+    loadAll();
+    channel = sb.channel("events-" + uid)
+      .on("postgres_changes", { event: "*", schema: "public", table: "events", filter: "user_id=eq." + uid }, scheduleLoad)
+      .subscribe();
+  }
+
+  sb.auth.onAuthStateChange((event, session) => {
+    // defer: Supabase recommends not awaiting other calls inside this callback
+    setTimeout(() => startSession(session ? session.user : null), 0);
+  });
+
+  // pick up changes made on other devices when the app comes back to the foreground
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) scheduleLoad(); });
+  window.addEventListener("online", scheduleLoad);
+})();
+</script>
+</body>
+</html>
