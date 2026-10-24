@@ -137,10 +137,26 @@ export function buildCalendar(events) {
 const text = (body, status) =>
   new Response(body, { status, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
 
+// Server key: the legacy service_role key, or one of the newer secret keys
+function serverKey() {
+  const legacy = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (legacy) return legacy;
+  const raw = Deno.env.get("SUPABASE_SECRET_KEYS") || Deno.env.get("SUPABASE_SECRET_KEY") || "";
+  try {
+    const v = JSON.parse(raw);
+    if (typeof v === "string") return v;
+    if (v && typeof v === "object") return v.default || Object.values(v)[0];
+  } catch (_) { /* plain string */ }
+  return raw;
+}
+
 async function rest(path) {
   const url = Deno.env.get("SUPABASE_URL") + "/rest/v1/" + path;
-  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const r = await fetch(url, { headers: { apikey: key, Authorization: "Bearer " + key } });
+  const key = serverKey();
+  if (!key) throw new Error("Funkcia nemá serverový kľúč (SUPABASE_SERVICE_ROLE_KEY).");
+  const headers = { apikey: key };
+  if (key.startsWith("eyJ")) headers.Authorization = "Bearer " + key; // only JWT keys go in Authorization
+  const r = await fetch(url, { headers });
   if (!r.ok) throw new Error("Databáza odpovedala " + r.status + ": " + (await r.text()).slice(0, 300));
   return r.json();
 }
