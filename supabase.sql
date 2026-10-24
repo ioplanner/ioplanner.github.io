@@ -6,6 +6,7 @@ create table if not exists public.events (
   user_id     uuid not null default auth.uid() references auth.users (id) on delete cascade,
   title       text not null check (char_length(title) between 1 and 200),
   event_date  date not null,
+  end_date    date check (end_date is null or end_date >= event_date),
   start_time  time,
   end_time    time,
   status      text not null default 'todo' check (status in ('todo', 'doing', 'done')),
@@ -55,3 +56,4 @@ exception when duplicate_object then null;
 end $$;
 
 -- Prílohy (PDF): spusti aj súbor supabase-prilohy.sql
+-- Viacdňové akcie: v novom projekte už netreba, stĺpec end_date je vyššie

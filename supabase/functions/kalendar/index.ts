@@ -82,16 +82,20 @@ export function buildEvent(ev) {
 
   const start = (ev.start_time || "").slice(0, 5);
   const endT = (ev.end_time || "").slice(0, 5);
+  const endDate = ev.end_date && ev.end_date > ev.event_date ? ev.end_date : ev.event_date;
+  const multi = endDate !== ev.event_date;
   if (start) {
     const s = wall(ev.event_date, start);
-    let e = endT ? wall(ev.event_date, endT) : new Date(s.getTime() + 3600e3);
-    if (e <= s) e = new Date(e.getTime() + 86400e3); // ends after midnight
+    let e;
+    if (endT) e = wall(endDate, endT);
+    else if (multi) e = new Date(wall(endDate).getTime() + 86400e3); // until the end of the last day
+    else e = new Date(s.getTime() + 3600e3);                        // default length 1 hour
+    if (e <= s) e = new Date(e.getTime() + 86400e3);                 // ends after midnight
     lines.push("DTSTART;TZID=" + TZID + ":" + ymd(s) + "T" + hms(s));
     lines.push("DTEND;TZID=" + TZID + ":" + ymd(e) + "T" + hms(e));
   } else {
-    const s = wall(ev.event_date);
-    lines.push("DTSTART;VALUE=DATE:" + ymd(s));
-    lines.push("DTEND;VALUE=DATE:" + ymd(new Date(s.getTime() + 86400e3)));
+    lines.push("DTSTART;VALUE=DATE:" + ymd(wall(ev.event_date)));
+    lines.push("DTEND;VALUE=DATE:" + ymd(new Date(wall(endDate).getTime() + 86400e3)));
   }
 
   const done = ev.status === "done";
@@ -171,8 +175,8 @@ if (typeof Deno !== "undefined" && Deno.serve) {
       if (!feed.length) return text("Tento kalendár neexistuje. Skopíruj si v diári aktuálnu adresu.", 404);
       const since = new Date(Date.now() - 400 * 86400e3).toISOString().slice(0, 10);
       const events = await rest(
-        "events?select=id,title,event_date,start_time,end_time,status,notes,checklist,attachments,updated_at" +
-          "&user_id=eq." + feed[0].user_id + "&event_date=gte." + since + "&order=event_date&limit=5000",
+        "events?select=id,title,event_date,end_date,start_time,end_time,status,notes,checklist,attachments,updated_at" +
+          "&user_id=eq." + feed[0].user_id + "&or=(event_date.gte." + since + ",end_date.gte." + since + ")" + "&order=event_date&limit=5000",
       );
       return new Response(req.method === "HEAD" ? null : buildCalendar(events), {
         status: 200,

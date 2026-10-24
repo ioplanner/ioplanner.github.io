@@ -159,6 +159,10 @@ header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; b
 .field input, .field select, .field textarea { width: 100%; border: 1px solid var(--line); background: var(--surface-2); border-radius: 9px; padding: 9px 10px; min-width: 0; }
 .field textarea { min-height: 90px; resize: vertical; }
 .row { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 10px; }
+.when { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+.when .hint { grid-column: 1 / -1; }
+.pair { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 6px; }
+@media (max-width: 620px) { .when { grid-template-columns: minmax(0, 1fr); } }
 .status-pick { display: flex; gap: 6px; flex-wrap: wrap; }
 .status-pick button { border: 1px solid var(--line); background: var(--surface-2); border-radius: 999px; padding: 5px 12px; font-size: .85rem; font-weight: 600; color: var(--muted); }
 .status-pick button[aria-pressed="true"][data-s="todo"] { color: var(--todo); border-color: currentColor; background: var(--surface); }
@@ -319,7 +323,34 @@ main { padding-bottom: 40px; }
   function sortEvents(list) {
     return list.sort((a, b) => (a.date + (a.time || "99")).localeCompare(b.date + (b.time || "99")) || a.title.localeCompare(b.title));
   }
-  function eventsOn(dateStr) { return sortEvents([...state.events.values()].filter(e => e.date === dateStr)); }
+  const lastDay = e => e.endDate || e.date;
+  const isMulti = e => !!e.endDate && e.endDate !== e.date;
+  function eventsOn(dateStr) {
+    // events running on this day; ones that started earlier come first
+    return [...state.events.values()].filter(e => e.date <= dateStr && lastDay(e) >= dateStr).sort((a, b) => {
+      const ka = (a.date < dateStr ? "0" : "1") + (a.date < dateStr ? "" : (a.time || "99"));
+      const kb = (b.date < dateStr ? "0" : "1") + (b.date < dateStr ? "" : (b.time || "99"));
+      return ka.localeCompare(kb) || a.title.localeCompare(b.title);
+    });
+  }
+  // what to show as the time of an event on a given day
+  function dayLabel(ev, ds) {
+    if (!isMulti(ev)) return ev.time ? ev.time + (ev.end ? "–" + ev.end : "") : "celý deň";
+    if (ds === ev.date) return (ev.time ? ev.time + " " : "") + "→ " + fmtShort(ev.endDate);
+    if (ds === ev.endDate) return "do " + (ev.end || "konca dňa");
+    return "celý deň ↔";
+  }
+  function chipLabel(ev, ds) {
+    if (!isMulti(ev)) return ev.time || "";
+    if (ds === ev.date) return (ev.time || "") + "→";
+    if (ds === ev.endDate) return "→" + (ev.end || "");
+    return "↔";
+  }
+  function rangeText(ev) {
+    const a = fmtShort(ev.date) + (ev.time ? " " + ev.time : "");
+    if (!isMulti(ev)) return a + (ev.end ? "–" + ev.end : "");
+    return a + " – " + fmtShort(ev.endDate) + (ev.end ? " " + ev.end : "");
+  }
 
   // ---------- Toast ----------
   let toastTimer;
@@ -333,6 +364,7 @@ main { padding-bottom: 40px; }
   function clean(ev) {
     return {
       title: ev.title, date: ev.date, time: ev.time || "", end: ev.end || "",
+      endDate: ev.endDate && ev.endDate !== ev.date ? ev.endDate : "",
       status: ev.status, notes: ev.notes || "",
       checklist: (ev.checklist || []).filter(c => c.text.trim()).map(c => ({ id: c.id, text: c.text.trim(), done: !!c.done })),
       attachments: (ev.attachments || []).map(a => ({ path: a.path, name: a.name, size: a.size || 0, kind: a.kind || "ine", added: a.added || Date.now() })),
@@ -341,11 +373,13 @@ main { padding-bottom: 40px; }
   }
   const newId = () => (crypto.randomUUID ? crypto.randomUUID() :
     "10000000-1000-4000-8000-100000000000".replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)));
-  const toRow = (id, d, withFiles) => {
+  const toRow = (id, d, withFiles, withEnd) => {
     const r = {
       id, title: d.title, event_date: d.date, start_time: d.time || null, end_time: d.end || null,
       status: d.status, notes: d.notes, checklist: d.checklist,
     };
+    // end date only when used, so single-day events save even before the multi-day SQL is run
+    if (withEnd || d.endDate) r.end_date = d.endDate || null;
     // send attachments only when there are some (or they changed), so the diary keeps working before the attachments SQL is run
     if (withFiles || (d.attachments && d.attachments.length)) r.attachments = d.attachments || [];
     return r;
@@ -354,6 +388,7 @@ main { padding-bottom: 40px; }
     id: r.id, title: r.title, date: r.event_date, time: (r.start_time || "").slice(0, 5), end: (r.end_time || "").slice(0, 5),
     status: r.status || "todo", notes: r.notes || "", checklist: Array.isArray(r.checklist) ? r.checklist : [],
     attachments: Array.isArray(r.attachments) ? r.attachments : [],
+    endDate: r.end_date && r.end_date !== r.event_date ? r.end_date : "",
   });
 
   // ---------- Attachments (Supabase Storage) ----------
@@ -402,7 +437,7 @@ main { padding-bottom: 40px; }
       state.events.set(nid, { id: nid, ...data }); saveLocal(); render(); return;
     }
     const nid = id || newId();
-    const { error } = await sb.from("events").upsert(toRow(nid, data, !!ev.attTouched));
+    const { error } = await sb.from("events").upsert(toRow(nid, data, !!ev.attTouched, !!ev.hadEnd));
     if (error) throw friendly(error);
     state.events.set(nid, { id: nid, ...data }); cacheEvents(); render();
   }
@@ -416,6 +451,7 @@ main { padding-bottom: 40px; }
   }
   function friendly(e) {
     const msg = (e && (e.message || "")) + "";
+    if (/end_date/i.test(msg)) return "Databáza ešte nepozná viacdňové akcie. V Supabase spusti súbor supabase-viacdnove.sql (pozri README).";
     if (/attachments/i.test(msg)) return "Databáza ešte nepozná prílohy. V Supabase spusti súbor supabase-prilohy.sql (pozri README).";
     if (e && e.code === "42501" || /row-level security/i.test(msg)) return "Databáza zápis odmietla. Skontroluj, či si spustil SQL z kroku 2 v návode.";
     if (e && e.code === "42P01" || /relation .* does not exist/i.test(msg)) return "V databáze chýba tabuľka. Spusti SQL z kroku 2 v návode.";
@@ -435,10 +471,10 @@ main { padding-bottom: 40px; }
       class: "card", type: "button", dataset: { s: ev.status, id: ev.id },
       onclick: () => openEditor(ev.id),
     },
-      opts.showDate ? null : h("span", { class: "t", text: ev.time ? ev.time + (ev.end ? "–" + ev.end : "") : "celý deň" }),
+      opts.showDate ? null : h("span", { class: "t", text: dayLabel(ev, opts.day || ev.date) }),
       h("span", { class: "ttl", text: ev.title }),
       h("span", { class: "meta" },
-        opts.showDate ? h("span", { class: "prog", text: fmtShort(ev.date) + (ev.time ? " · " + ev.time : "") }) : null,
+        opts.showDate ? h("span", { class: "prog", text: rangeText(ev) }) : null,
         opts.pill !== false ? h("span", { class: "pill", dataset: { s: ev.status }, text: STATUS[ev.status] }) : null,
         total ? h("span", { class: "prog", text: "☑ " + doneN + "/" + total }) : null,
         ev.notes ? h("span", { text: "poznámka" }) : null,
@@ -476,7 +512,7 @@ main { padding-bottom: 40px; }
       evs.slice(0, 3).forEach(ev => cell.append(h("span", {
         class: "chip", dataset: { s: ev.status }, title: ev.title,
         onclick: e => { e.stopPropagation(); openEditor(ev.id); },
-      }, ev.time ? h("b", { text: ev.time }) : null, ev.title)));
+      }, chipLabel(ev, ds) ? h("b", { text: chipLabel(ev, ds) }) : null, ev.title)));
       if (evs.length > 3) cell.append(h("span", { class: "more", text: "+ ďalšie " + (evs.length - 3) }));
       if (evs.length) cell.append(h("span", { class: "dots" }, evs.slice(0, 6).map(ev => h("i", { dataset: { s: ev.status } }))));
       grid.append(cell);
@@ -488,7 +524,7 @@ main { padding-bottom: 40px; }
         h("h2", { text: fmtDay(sel).replace(/^./, m => m.toUpperCase()) }),
         h("button", { class: "ghost", type: "button", onclick: () => openEditor(null, sel), text: "+ Pridať na tento deň" }),
       ),
-      selEvs.length ? h("div", { class: "list" }, selEvs.map(ev => card(ev))) :
+      selEvs.length ? h("div", { class: "list" }, selEvs.map(ev => card(ev, { day: sel }))) :
         h("p", { class: "empty", text: "Na tento deň nemáš nič naplánované." }),
     );
     viewEl.replaceChildren(h("div", { class: "dow" }, DOW.map(x => h("div", { text: x }))), grid, agenda);
@@ -509,7 +545,7 @@ main { padding-bottom: 40px; }
       const evs = eventsOn(ds);
       week.append(h("div", { class: "wday" + (ds === t ? " today" : "") },
         h("div", { class: "wday-h" }, h("strong", { text: DOW_LONG[i].replace(/^./, m => m.toUpperCase()) }), h("span", { text: fmtShort(ds) })),
-        evs.map(ev => card(ev, { pill: true })),
+        evs.map(ev => card(ev, { pill: true, day: ds })),
         h("button", { class: "add-mini", type: "button", onclick: () => openEditor(null, ds), text: "+ pridať" }),
       ));
     }
@@ -520,7 +556,7 @@ main { padding-bottom: 40px; }
     periodEl.replaceChildren("Nástenka ", h("span", { text: state.boardScope === "upcoming" ? "od dnes" : "všetko" }));
     const t = todayIso();
     let all = sortEvents([...state.events.values()]);
-    if (state.boardScope === "upcoming") all = all.filter(e => e.date >= t || e.status !== "done");
+    if (state.boardScope === "upcoming") all = all.filter(e => lastDay(e) >= t || e.status !== "done");
     const tools = h("div", { class: "board-tools" },
       h("span", { text: "Zobraziť:" }),
       h("div", { class: "seg", role: "group", "aria-label": "Rozsah nástenky" },
@@ -636,7 +672,16 @@ main { padding-bottom: 40px; }
     const title = h("input", { id: "f-title", type: "text", value: draft.title, placeholder: "Napr. Zubár, Narodeniny mamy…", maxlength: "140" });
     const date = h("input", { id: "f-date", type: "date", value: draft.date });
     const time = h("input", { id: "f-time", type: "time", value: draft.time });
-    const end = h("input", { id: "f-end", type: "time", value: draft.end });
+    const end = h("input", { id: "f-end", type: "time", value: draft.end, "aria-label": "Čas konca" });
+    const endDate = h("input", { id: "f-enddate", type: "date", value: draft.endDate || draft.date, "aria-label": "Dátum konca" });
+    date.setAttribute("aria-label", "Dátum začiatku"); time.setAttribute("aria-label", "Čas začiatku");
+    draft.hadEnd = !!(src && src.endDate);
+    // keep the end on or after the start when the start date moves
+    let lastStart = date.value;
+    date.addEventListener("change", () => {
+      if (!endDate.value || endDate.value === lastStart || endDate.value < date.value) endDate.value = date.value;
+      lastStart = date.value;
+    });
     const notes = h("textarea", { id: "f-notes", placeholder: "Adresa, čo si zobrať, kontakt…" });
     notes.value = draft.notes || "";
 
@@ -723,10 +768,10 @@ main { padding-bottom: 40px; }
     const form = h("form", { class: "modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "m-title" },
       h("h2", { id: "m-title", text: src ? "Upraviť akciu" : "Nová akcia" }),
       h("div", { class: "field" }, h("label", { for: "f-title", text: "Názov" }), title),
-      h("div", { class: "row" },
-        h("div", { class: "field" }, h("label", { for: "f-date", text: "Dátum" }), date),
-        h("div", { class: "field" }, h("label", { for: "f-time", text: "Od" }), time),
-        h("div", { class: "field" }, h("label", { for: "f-end", text: "Do" }), end),
+      h("div", { class: "when" },
+        h("div", { class: "field" }, h("label", { for: "f-date", text: "Začiatok" }), h("div", { class: "pair" }, date, time)),
+        h("div", { class: "field" }, h("label", { for: "f-enddate", text: "Koniec" }), h("div", { class: "pair" }, endDate, end)),
+        h("p", { class: "hint", text: "Bez času je akcia celodenná. Viacdňová akcia: zmeň dátum konca." }),
       ),
       h("div", { class: "field" }, h("span", { class: "lbl", text: "Stav" }), statusBox),
       h("div", { class: "field" }, h("label", { for: "f-notes", text: "Poznámky" }), notes),
@@ -741,10 +786,16 @@ main { padding-bottom: 40px; }
     form.addEventListener("submit", async e => {
       e.preventDefault();
       draft.title = title.value.trim(); draft.date = date.value; draft.time = time.value; draft.end = end.value; draft.notes = notes.value;
+      const endD = endDate.value || draft.date;
       if (newCheck.value.trim()) addCheck();
       if (!draft.title) { err.textContent = "Zadaj názov akcie."; err.hidden = false; title.focus(); return; }
       if (!draft.date) { err.textContent = "Vyber dátum."; err.hidden = false; return; }
-      if (draft.end && !draft.time) draft.end = "";
+      if (endD < draft.date) { err.textContent = "Koniec nemôže byť skôr ako začiatok."; err.hidden = false; endDate.focus(); return; }
+      if (draft.end && !draft.time) { err.textContent = "Zadaj aj čas začiatku, alebo vymaž čas konca."; err.hidden = false; time.focus(); return; }
+      if (endD === draft.date && draft.time && draft.end && draft.end <= draft.time) {
+        err.textContent = "Koniec musí byť neskôr ako začiatok. Ak akcia končí na druhý deň, zmeň dátum konca."; err.hidden = false; end.focus(); return;
+      }
+      draft.endDate = endD === draft.date ? "" : endD;
       if (busyUploads) { err.textContent = "Počkaj, kým sa dokončí nahrávanie príloh."; err.hidden = false; return; }
       saveBtn.disabled = true; saveBtn.textContent = "Ukladám…";
       try {

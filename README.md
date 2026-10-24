@@ -10,7 +10,7 @@ Súkromný kalendár s mesačným a týždenným pohľadom, kanban nástenkou (*
 
 ## 1. Supabase (databáza)
 
-1. V projekte otvor **SQL Editor** → **New query**, vlož celý obsah súboru **supabase.sql** a stlač **Run**. Má sa ukázať *Success*. To isté potom urob so súborom **supabase-prilohy.sql** (prílohy PDF).
+1. V projekte otvor **SQL Editor** → **New query**, vlož celý obsah súboru **supabase.sql** a stlač **Run**. Má sa ukázať *Success*. To isté potom urob so súbormi **supabase-prilohy.sql** (prílohy PDF) a **supabase-viacdnove.sql** (akcie cez viac dní).
 2. **Vytvor si prihlasovací účet:** **Authentication** → **Users** → **Add user** → **Create new user**. Zadaj e-mail a heslo a zaškrtni **Auto Confirm User**.
 3. **Zakáž registráciu cudzím:** **Authentication** → *Sign In / Providers* → vypni **Allow new users to sign up**.
 4. **Údaje na pripojenie:** **Project Settings** → **API Keys** → verejný kľúč **publishable** (`sb_publishable_…`), nie *secret* / *service_role*.
@@ -45,6 +45,7 @@ Zmeny: otvor súbor na GitHube → ceruzka → uprav → **Commit changes**. Str
 | „Databáza zápis odmietla“ | spusti supabase.sql znova, celé naraz |
 | „Nesprávny e-mail alebo heslo“ | skontroluj účet v Authentication → Users |
 | „Úložisko na prílohy ešte neexistuje“ alebo „Databáza ešte nepozná prílohy“ | spusti supabase-prilohy.sql |
+| „Databáza ešte nepozná viacdňové akcie“ | spusti supabase-viacdnove.sql |
 | „chýba tabuľka pre kalendár“ | spusti supabase-kalendar.sql |
 | Kalendár Apple hlási chybu alebo „Vyskúšať adresu“ ukáže *Missing authorization header* | vo funkcii **swift-service** vypni **Verify JWT** |
 | „Vyskúšať adresu“ ukáže *Function not found* | funkcia ešte nie je nasadená (Kalendár Apple, krok 2) |
