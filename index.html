@@ -242,6 +242,16 @@ header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; b
 @media (max-width: 620px) { .pay-grid { grid-template-columns: 1fr 1fr; } .pay-grid .field:first-child { grid-column: 1 / -1; } .wp-row { grid-template-columns: minmax(0, 1fr) auto; } .wp-row .wp-main { grid-column: 1 / -1; } }
 .when { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
 .when .hint { grid-column: 1 / -1; }
+.days-box { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+.days-box[hidden] { display: none; }
+.days-head { display: flex; align-items: center; gap: 8px; }
+.days-head .spacer { flex: 1; }
+.day-row { display: grid; grid-template-columns: minmax(70px, auto) minmax(0, 1fr) auto minmax(0, 1fr); gap: 6px; align-items: center; }
+.day-row input { width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 8px; }
+.day-name { font-size: .85rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.day-name b { font-weight: 600; }
+.day-row .dash { color: var(--muted); }
+
 .pair { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 6px; }
 @media (max-width: 620px) { .when { grid-template-columns: minmax(0, 1fr); } }
 .status-pick { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -439,25 +449,40 @@ main { padding-bottom: 40px; }
     return "doing";
   }
   const isMulti = e => !!e.endDate && e.endDate !== e.date;
+  const hasDays = e => isMulti(e) && e.days && typeof e.days === "object" && Object.keys(e.days).length > 0;
+  function daysOf(ev) {
+    const out = [];
+    for (let d = parse(ev.date); iso(d) <= lastDay(ev) && out.length < 62; d = addDays(d, 1)) out.push(iso(d));
+    return out;
+  }
+  // start and end time of an event on one particular day (multi-day events can have their own hours each day)
+  function dayTimes(ev, ds) {
+    if (!isMulti(ev)) return { from: ev.time || "", to: ev.end || "" };
+    const d = (ev.days && ev.days[ds]) || {};
+    if (ds === ev.date) return { from: ev.time || "", to: d.to || "" };
+    if (ds === ev.endDate) return { from: d.from || "", to: ev.end || "" };
+    return { from: d.from || "", to: d.to || "" };
+  }
   function eventsOn(dateStr) {
-    // events running on this day; ones that started earlier come first
-    return [...state.events.values()].filter(e => e.date <= dateStr && lastDay(e) >= dateStr).sort((a, b) => {
-      const ka = (a.date < dateStr ? "0" : "1") + (a.date < dateStr ? "" : (a.time || "99"));
-      const kb = (b.date < dateStr ? "0" : "1") + (b.date < dateStr ? "" : (b.time || "99"));
-      return ka.localeCompare(kb) || a.title.localeCompare(b.title);
-    });
+    // events running on this day, ordered by that day's start time
+    return [...state.events.values()].filter(e => e.date <= dateStr && lastDay(e) >= dateStr).sort((a, b) =>
+      (dayTimes(a, dateStr).from || "99").localeCompare(dayTimes(b, dateStr).from || "99") || a.title.localeCompare(b.title));
   }
   // what to show as the time of an event on a given day
   function dayLabel(ev, ds) {
     if (!isMulti(ev)) return ev.time ? ev.time + (ev.end ? "–" + ev.end : "") : "celý deň";
+    const list = daysOf(ev), n = list.indexOf(ds) + 1, tag = " · deň " + n + "/" + list.length;
+    const t = dayTimes(ev, ds);
+    if (hasDays(ev) || (t.from && t.to)) return (t.from || t.to ? (t.from || "…") + "–" + (t.to || "…") : "celý deň") + tag;
     if (ds === ev.date) return (ev.time ? ev.time + " " : "") + "→ " + fmtShort(ev.endDate);
     if (ds === ev.endDate) return "do " + (ev.end || "konca dňa");
     return "celý deň ↔";
   }
   function chipLabel(ev, ds) {
     if (!isMulti(ev)) return ev.time || "";
-    if (ds === ev.date) return (ev.time || "") + "→";
-    if (ds === ev.endDate) return "→" + (ev.end || "");
+    const t = dayTimes(ev, ds);
+    if (t.from) return t.from;
+    if (ds === ev.endDate && t.to) return "→" + t.to;
     return "↔";
   }
   function rangeText(ev) {
@@ -475,10 +500,22 @@ main { padding-bottom: 40px; }
   }
 
   // ---------- Storage ----------
+  // per-day hours of a multi-day event, only for days inside its range
+  function cleanDays(ev) {
+    if (!isMulti(ev) || !ev.days) return null;
+    const out = {};
+    daysOf(ev).forEach(ds => {
+      const d = ev.days[ds]; if (!d) return;
+      const from = /^\d\d:\d\d$/.test(d.from || "") ? d.from : "", to = /^\d\d:\d\d$/.test(d.to || "") ? d.to : "";
+      if (from || to) out[ds] = { from, to };
+    });
+    return Object.keys(out).length ? out : null;
+  }
   function clean(ev) {
     return {
       title: ev.title, date: ev.date, time: ev.time || "", end: ev.end || "",
       endDate: ev.endDate && ev.endDate !== ev.date ? ev.endDate : "",
+      days: cleanDays(ev),
       work: ev.work && ev.work.type ? {
         wp: ev.work.wp || "", name: ev.work.name || "", type: ev.work.type,
         rate: ev.work.rate === null || ev.work.rate === undefined || ev.work.rate === "" ? null : Number(ev.work.rate), qty: ev.work.qty === null || ev.work.qty === "" || ev.work.qty === undefined ? null : Number(ev.work.qty),
@@ -506,6 +543,7 @@ main { padding-bottom: 40px; }
     };
     // end date only when used, so single-day events save even before the multi-day SQL is run
     if (withEnd || d.endDate) r.end_date = d.endDate || null;
+    if (d.days || d._hadDays) r.days = d.days || null;
     if (d.work || d._hadWork) r.work = d.work || null;
     // send attachments only when there are some (or they changed), so the diary keeps working before the attachments SQL is run
     if (withFiles || (d.attachments && d.attachments.length)) r.attachments = d.attachments || [];
@@ -516,6 +554,7 @@ main { padding-bottom: 40px; }
     status: r.status || "todo", notes: r.notes || "", checklist: Array.isArray(r.checklist) ? r.checklist : [],
     attachments: Array.isArray(r.attachments) ? r.attachments : [],
     endDate: r.end_date && r.end_date !== r.event_date ? r.end_date : "",
+    days: r.days && typeof r.days === "object" && !Array.isArray(r.days) ? r.days : null,
     work: r.work && r.work.type ? r.work : null,
   });
 
@@ -631,6 +670,18 @@ main { padding-bottom: 40px; }
   function autoQty(ev, type) {
     if (type === "day") return Math.round((parse(lastDay(ev)) - parse(ev.date)) / 864e5) + 1;
     if (type === "task") return 1;
+    if (hasDays(ev)) {
+      // multi-day event with its own hours each day: add up the days
+      let sum = 0;
+      for (const ds of daysOf(ev)) {
+        const t = dayTimes(ev, ds);
+        if (!t.from || !t.to) return null;
+        let hrs = (new Date(ds + "T" + t.to) - new Date(ds + "T" + t.from)) / 36e5;
+        if (hrs <= 0) hrs += 24;
+        sum += hrs;
+      }
+      return Math.round(sum * 100) / 100;
+    }
     if (ev.time && ev.end) {
       let hrs = (new Date(lastDay(ev) + "T" + ev.end) - new Date(ev.date + "T" + ev.time)) / 36e5;
       if (hrs <= 0) hrs += 24;
@@ -908,7 +959,7 @@ main { padding-bottom: 40px; }
       state.events.set(nid, { id: nid, ...data }); saveLocal(); render(); return;
     }
     const nid = id || newId();
-    const { error } = await sb.from("events").upsert(toRow(nid, { ...data, _hadWork: !!ev.hadWork }, !!ev.attTouched, !!ev.hadEnd));
+    const { error } = await sb.from("events").upsert(toRow(nid, { ...data, _hadWork: !!ev.hadWork, _hadDays: !!ev.hadDays }, !!ev.attTouched, !!ev.hadEnd));
     if (error) throw friendly(error);
     state.events.set(nid, { id: nid, ...data }); cacheEvents(); render();
   }
@@ -924,6 +975,7 @@ main { padding-bottom: 40px; }
     const msg = (e && (e.message || "")) + "";
     if (/logo|suppliers|'vat' column|'archived' column/i.test(msg)) return "Databáza ešte nepozná zoznam dodávateľov a logá. V Supabase spusti súbor supabase-dodavatelia.sql (pozri README).";
     if (/workplaces|'work' column/i.test(msg)) return "Databáza ešte nepozná pracovné miesta. V Supabase spusti súbor supabase-mzdy.sql (pozri README).";
+    if (/'days' column|column "days"|events\.days/i.test(msg)) return "Databáza ešte nepozná časy po dňoch. V Supabase spusti súbor supabase-dni.sql (pozri README).";
     if (/end_date/i.test(msg)) return "Databáza ešte nepozná viacdňové akcie. V Supabase spusti súbor supabase-viacdnove.sql (pozri README).";
     if (/attachments/i.test(msg)) return "Databáza ešte nepozná prílohy. V Supabase spusti súbor supabase-prilohy.sql (pozri README).";
     if (e && e.code === "42501" || /row-level security/i.test(msg)) return "Databáza zápis odmietla. Skontroluj, či si spustil SQL z kroku 2 v návode.";
@@ -1327,6 +1379,55 @@ main { padding-bottom: 40px; }
     const endDate = h("input", { id: "f-enddate", type: "date", value: draft.endDate || draft.date, "aria-label": "Dátum konca" });
     date.setAttribute("aria-label", "Dátum začiatku"); time.setAttribute("aria-label", "Čas začiatku");
     draft.hadEnd = !!(src && src.endDate);
+    draft.hadDays = !!(src && src.days);
+    // per-day hours for multi-day events
+    const daysDraft = JSON.parse(JSON.stringify(draft.days || {}));
+    const daysBox = h("div", { class: "days-box", hidden: true });
+    function rangeDays() {
+      if (!date.value || !endDate.value || endDate.value <= date.value) return [];
+      return daysOf({ date: date.value, endDate: endDate.value });
+    }
+    function currentDays() {
+      const list = rangeDays(); if (!list.length) return null;
+      const out = {};
+      list.forEach((ds, i) => {
+        const d = daysDraft[ds] || {};
+        out[ds] = { from: i === 0 ? time.value : (d.from || ""), to: i === list.length - 1 ? end.value : (d.to || "") };
+      });
+      return out;
+    }
+    function drawDays() {
+      const list = rangeDays();
+      daysBox.hidden = !list.length;
+      if (!list.length) { daysBox.replaceChildren(); return; }
+      // a day without its own hours starts with the event's start and end time
+      list.forEach((ds, i) => {
+        const d = daysDraft[ds] || (daysDraft[ds] = {});
+        if (d.from === undefined) d.from = i === 0 ? time.value : time.value;
+        if (d.to === undefined) d.to = i === list.length - 1 ? end.value : end.value;
+      });
+      const rows = list.map((ds, i) => {
+        const first = i === 0, last = i === list.length - 1, d = daysDraft[ds];
+        const from = h("input", { type: "time", id: "f-day-from-" + ds, value: first ? time.value : d.from, "aria-label": "Od, " + fmtDay(ds) });
+        const to = h("input", { type: "time", id: "f-day-to-" + ds, value: last ? end.value : d.to, "aria-label": "Do, " + fmtDay(ds) });
+        from.addEventListener("input", () => { d.from = from.value; if (first) time.value = from.value; drawPay(); });
+        to.addEventListener("input", () => { d.to = to.value; if (last) end.value = to.value; drawPay(); });
+        const dd = parse(ds);
+        return h("div", { class: "day-row" },
+          h("span", { class: "day-name" }, h("b", { text: DOW[dowIdx(dd)] }), " " + fmtShort(ds)),
+          from, h("span", { class: "dash", text: "–" }), to);
+      });
+      const same = h("button", { class: "ghost mini", type: "button", text: "Všetkým dňom rovnako",
+        onclick: () => {
+          const f = time.value, t = end.value;
+          list.forEach(ds => { daysDraft[ds] = { from: f, to: t }; });
+          drawDays(); drawPay();
+        } });
+      daysBox.replaceChildren(
+        h("div", { class: "days-head" }, h("span", { class: "lbl", text: "Časy po dňoch" }), h("span", { class: "spacer" }), same),
+        ...rows,
+        h("p", { class: "hint", text: "Každý deň má vlastný čas od – do. Prvý deň začína časom začiatku, posledný končí časom konca." }));
+    }
     draft.hadWork = !!(src && src.work);
     draft.work = draft.work ? { ...draft.work } : null;
 
@@ -1423,7 +1524,7 @@ main { padding-bottom: 40px; }
     const payOut = h("div", { class: "pay-out" });
     const supOut = h("div", { class: "sup-out" });
     function currentEv() {
-      return { date: date.value, endDate: endDate.value, time: time.value, end: end.value, work: draft.work };
+      return { date: date.value, endDate: endDate.value, time: time.value, end: end.value, days: currentDays(), work: draft.work };
     }
     function syncWorkFromInputs() {
       if (!draft.work) return;
@@ -1523,7 +1624,12 @@ main { padding-bottom: 40px; }
     date.addEventListener("change", () => {
       if (!endDate.value || endDate.value === lastStart || endDate.value < date.value) endDate.value = date.value;
       lastStart = date.value;
+      drawDays();
     });
+    endDate.addEventListener("change", drawDays);
+    time.addEventListener("input", () => { const el = document.getElementById("f-day-from-" + date.value); if (el) el.value = time.value; });
+    end.addEventListener("input", () => { const el = document.getElementById("f-day-to-" + endDate.value); if (el) el.value = end.value; });
+    drawDays();
     const notes = h("textarea", { id: "f-notes", placeholder: "Adresa, čo si zobrať, kontakt…" });
     notes.value = draft.notes || "";
 
@@ -1671,7 +1777,8 @@ main { padding-bottom: 40px; }
       h("div", { class: "when" },
         h("div", { class: "field" }, h("label", { for: "f-date", text: "Začiatok" }), h("div", { class: "pair" }, date, time)),
         h("div", { class: "field" }, h("label", { for: "f-enddate", text: "Koniec" }), h("div", { class: "pair" }, endDate, end)),
-        h("p", { class: "hint", text: "Bez času je akcia celodenná. Viacdňová akcia: zmeň dátum konca." }),
+        h("p", { class: "hint", text: "Bez času je akcia celodenná. Viacdňová akcia: zmeň dátum konca a nastav časy pre každý deň." }),
+        daysBox,
       ),
       h("div", { class: "field" }, h("span", { class: "lbl", text: "Stav" }), statusBox),
       h("div", { class: "field" }, h("label", { for: "f-notes", text: "Poznámky" }), notes),
@@ -1696,6 +1803,7 @@ main { padding-bottom: 40px; }
         err.textContent = "Koniec musí byť neskôr ako začiatok. Ak akcia končí na druhý deň, zmeň dátum konca."; err.hidden = false; end.focus(); return;
       }
       draft.endDate = endD === draft.date ? "" : endD;
+      draft.days = draft.endDate ? currentDays() : null;
       syncWorkFromInputs();
       if (draft.work && payRate.value.trim() !== "" && (toNum(payRate.value) === null || toNum(payRate.value) < 0)) { err.textContent = "Sumu zadaj ako číslo, napr. 12,50, alebo ju nechaj prázdnu."; err.hidden = false; payRate.focus(); return; }
       const badSup = supLinesDraft.findIndex(l => (l.costText || "").trim() !== "" && (toNum(l.costText) === null || toNum(l.costText) < 0));

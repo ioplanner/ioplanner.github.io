@@ -84,9 +84,34 @@ function statusOf(ev, today = todayLocal()) {
   return "doing";
 }
 
-export function buildEvent(ev) {
-  const status = statusOf(ev);
-  const lines = ["BEGIN:VEVENT", "UID:" + ev.id + "@ioplanner"];
+// Multi-day event with its own hours each day: one calendar entry per day
+function eachDay(from, to) {
+  const out = [];
+  for (let d = wall(from); ymd(d) <= ymd(wall(to)) && out.length < 62; d = new Date(d.getTime() + 86400e3)) {
+    out.push(d.getUTCFullYear() + "-" + pad(d.getUTCMonth() + 1) + "-" + pad(d.getUTCDate()));
+  }
+  return out;
+}
+export function buildEvents(ev) {
+  const endDate = ev.end_date && ev.end_date > ev.event_date ? ev.end_date : ev.event_date;
+  const days = ev.days && typeof ev.days === "object" && !Array.isArray(ev.days) ? ev.days : null;
+  if (endDate === ev.event_date || !days || !Object.keys(days).length) return buildEvent(ev);
+  const list = eachDay(ev.event_date, endDate);
+  const out = [];
+  list.forEach((ds, i) => {
+    const d = days[ds] || {};
+    const from = i === 0 ? (ev.start_time || "").slice(0, 5) : (d.from || "");
+    const to = i === list.length - 1 ? (ev.end_time || "").slice(0, 5) : (d.to || "");
+    out.push(...buildEvent({ ...ev, event_date: ds, end_date: null, start_time: from, end_time: to }, {
+      uid: ev.id + "-" + ds.replace(/-/g, ""), suffix: " (deň " + (i + 1) + "/" + list.length + ")", statusEv: ev,
+    }));
+  });
+  return out;
+}
+
+export function buildEvent(ev, part) {
+  const status = statusOf(ev);  // for a day of a multi-day event this is that day's status
+  const lines = ["BEGIN:VEVENT", "UID:" + (part ? part.uid : ev.id) + "@ioplanner"];
   lines.push("DTSTAMP:" + utcStamp(ev.updated_at));
   if (ev.updated_at) lines.push("LAST-MODIFIED:" + utcStamp(ev.updated_at));
 
@@ -109,7 +134,7 @@ export function buildEvent(ev) {
   }
 
   const done = status === "done";
-  lines.push("SUMMARY:" + esc((done ? "✓ " : "") + ev.title));
+  lines.push("SUMMARY:" + esc((done ? "✓ " : "") + ev.title + (part ? part.suffix : "")));
 
   const parts = ["Stav: " + STATUS[status]];
   if (ev.notes && ev.notes.trim()) parts.push(ev.notes.trim());
@@ -143,7 +168,7 @@ export function buildCalendar(events) {
     "X-PUBLISHED-TTL:PT15M",
     ...VTIMEZONE,
   ];
-  for (const ev of events) lines.push(...buildEvent(ev));
+  for (const ev of events) lines.push(...buildEvents(ev));
   lines.push("END:VCALENDAR");
   return lines.map(fold).join("\r\n") + "\r\n";
 }
@@ -185,7 +210,7 @@ if (typeof Deno !== "undefined" && Deno.serve) {
       if (!feed.length) return text("Tento kalendár neexistuje. Skopíruj si v diári aktuálnu adresu.", 404);
       const since = new Date(Date.now() - 400 * 86400e3).toISOString().slice(0, 10);
       const events = await rest(
-        "events?select=id,title,event_date,end_date,start_time,end_time,status,notes,checklist,attachments,updated_at" +
+        "events?select=*" +
           "&user_id=eq." + feed[0].user_id + "&or=(event_date.gte." + since + ",end_date.gte." + since + ")" + "&order=event_date&limit=5000",
       );
       return new Response(req.method === "HEAD" ? null : buildCalendar(events), {

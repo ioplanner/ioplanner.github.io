@@ -5,13 +5,14 @@ Súkromný kalendár s mesačným a týždenným pohľadom, kanban nástenkou (*
 - Adresa: **https://ioplanner.github.io/**
 - Pohľady sa dajú otvoriť aj priamo: `#mesiac`, `#tyzden`, `#nastenka`.
 - Na mobile: Safari → Zdieľať → *Pridať na plochu*, Chrome → ⋮ → *Pridať na plochu*.
+- **Viacdňové akcie:** keď je dátum konca iný ako dátum začiatku, v akcii sa objaví **Časy po dňoch**: pre každý deň nastavíš vlastný čas od – do (prvý deň začína časom začiatku, posledný končí časom konca; *Všetkým dňom rovnako* skopíruje časy). V kalendári vidíš pri každom dni jeho časy, hodinová mzda sa spočíta zo súčtu hodín po dňoch a v Kalendári Apple je každý deň samostatná udalosť.
 - **Stav sa nastavuje sám podľa dátumu:** budúce akcie sú *Naplánované*, dnešné (aj viacdňové, ktoré práve bežia) *Prebieha*, minulé *Hotovo*.
 
 ---
 
 ## 1. Supabase (databáza)
 
-1. V projekte otvor **SQL Editor** → **New query**, vlož celý obsah súboru **supabase.sql** a stlač **Run**. Má sa ukázať *Success*. To isté potom urob so súbormi **supabase-prilohy.sql** (prílohy PDF) **supabase-viacdnove.sql** (akcie cez viac dní) a **supabase-mzdy.sql** (pracovné miesta a mzdy) a **supabase-dodavatelia.sql** (zoznam dodávateľov a logá; obsahuje aj supabase-loga.sql).
+1. V projekte otvor **SQL Editor** → **New query**, vlož celý obsah súboru **supabase.sql** a stlač **Run**. Má sa ukázať *Success*. To isté potom urob so súbormi **supabase-prilohy.sql** (prílohy PDF) **supabase-viacdnove.sql** (akcie cez viac dní) a **supabase-mzdy.sql** (pracovné miesta a mzdy) a **supabase-dodavatelia.sql** (zoznam dodávateľov a logá; obsahuje aj supabase-loga.sql) a **supabase-dni.sql** (časy po dňoch).
 2. **Vytvor si prihlasovací účet:** **Authentication** → **Users** → **Add user** → **Create new user**. Zadaj e-mail a heslo a zaškrtni **Auto Confirm User**.
 3. **Zakáž registráciu cudzím:** **Authentication** → *Sign In / Providers* → vypni **Allow new users to sign up**.
 4. **Údaje na pripojenie:** **Project Settings** → **API Keys** → verejný kľúč **publishable** (`sb_publishable_…`), nie *secret* / *service_role*.
@@ -47,6 +48,7 @@ Zmeny: otvor súbor na GitHube → ceruzka → uprav → **Commit changes**. Str
 | „Nesprávny e-mail alebo heslo“ | skontroluj účet v Authentication → Users |
 | „Úložisko na prílohy ešte neexistuje“ alebo „Databáza ešte nepozná prílohy“ | spusti supabase-prilohy.sql |
 | „Databáza ešte nepozná viacdňové akcie“ | spusti supabase-viacdnove.sql |
+| „Databáza ešte nepozná časy po dňoch“ | spusti supabase-dni.sql |
 | „Databáza ešte nepozná pracovné miesta“ | spusti supabase-mzdy.sql |
 | „Databáza ešte nepozná zoznam dodávateľov a logá“ | spusti supabase-dodavatelia.sql |
 | „chýba tabuľka pre kalendár“ | spusti supabase-kalendar.sql |
