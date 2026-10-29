@@ -152,6 +152,12 @@ header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; b
 .note-list input { width: 18px; height: 18px; margin-top: 1px; accent-color: var(--accent); }
 .note-list label { overflow-wrap: anywhere; cursor: pointer; font-size: .92rem; text-transform: none; letter-spacing: normal; font-weight: 400; color: var(--ink); }
 .note-list li.done label { text-decoration: line-through; color: var(--muted); }
+.ev-chip { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; max-width: 100%; border: 1px solid var(--line); background: var(--accent-soft); color: var(--ink); border-radius: 999px; padding: 2px 10px; font-size: .78rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev-chip.gone { background: transparent; color: var(--muted); font-weight: 500; }
+.linked-notes { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 9px; }
+.linked-notes .ln { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: .88rem; }
+.linked-notes .prog { font-family: var(--f-mono); font-size: .72rem; color: var(--muted); }
+.linked-notes .ln-body { color: var(--muted); overflow-wrap: anywhere; }
 .notes-empty { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
 .notes-empty h2 { margin: 0; font-family: var(--f-display); font-size: 1.2rem; }
 .pin-row { display: flex; align-items: center; gap: 8px; font-size: .92rem; cursor: pointer; }
@@ -1191,6 +1197,7 @@ main { padding-bottom: 40px; }
   }
   function noteFriendly(e) {
     const m = ((e && e.message) || "") + "";
+    if (/event_id/i.test(m)) return "Databáza ešte nevie priradiť poznámku k akcii. V Supabase znova spusti súbor supabase-poznamky.sql (pozri README).";
     if (/notes|relation|schema cache|does not exist/i.test(m)) return "Databáza ešte nepozná poznámky. V Supabase spusti súbor supabase-poznamky.sql (pozri README).";
     if (/fetch|network/i.test(m)) return "Si offline. Poznámku sa nepodarilo uložiť.";
     return "Poznámku sa nepodarilo uložiť: " + (m || "neznáma chyba");
@@ -1201,6 +1208,8 @@ main { padding-bottom: 40px; }
       items: noteItems(n).filter(i => (i.text || "").trim()).map(i => ({ id: i.id || Math.random().toString(36).slice(2, 9), text: i.text.trim(), done: !!i.done })),
       pinned: !!n.pinned, updated_at: new Date().toISOString(),
     };
+    // link to an event: only sent when used, so plain notes save even before the column exists
+    if (n.event_id || n._hadEvent) row.event_id = n.event_id || null;
     if (!row.title && !row.body.trim() && !row.items.length) throw "Poznámka je prázdna. Napíš nadpis, text alebo položku.";
     if (!sb || !uid) { state.notes.set(row.id, row); saveLocalWp(); return row; }
     const { error } = await sb.from("notes").upsert(row);
@@ -1224,10 +1233,26 @@ main { padding-bottom: 40px; }
     try { await saveNote(copy); } catch (m) { state.notes.set(n.id, n); toast(m); }
     noteBusy = false; render();
   }
+  const evLabel = e => fmtShort(e.date) + (isMulti(e) ? "–" + fmtShort(e.endDate) : "") + " · " + e.title;
+  function eventChip(n) {
+    if (!n.event_id) return null;
+    const e = state.events.get(n.event_id);
+    if (!e) return h("span", { class: "ev-chip gone", text: "akcia bola vymazaná" });
+    return h("button", { class: "ev-chip", type: "button", title: "Otvoriť akciu", onclick: ev => { ev.stopPropagation(); openEditor(e.id); } },
+      logoEl(e.work ? wpLogo(e.work.wp) : null, "xs"), evLabel(e));
+  }
+  let notesFilter = "all";
   function renderNotes() {
     periodEl.replaceChildren("Nástenka ", h("span", { text: "poznámky" }));
-    const list = sortedNotes();
-    const tools = h("div", { class: "board-tools" }, boardSwitch(), h("span", { class: "tools-gap" }),
+    let list = sortedNotes();
+    if (notesFilter === "free") list = list.filter(n => !n.event_id);
+    if (notesFilter === "linked") list = list.filter(n => n.event_id);
+    const setF = f => { notesFilter = f; render(); };
+    const filter = state.notes.size ? h("div", { class: "seg", role: "group", "aria-label": "Filter poznámok" },
+      h("button", { "aria-pressed": String(notesFilter === "all"), onclick: () => setF("all"), text: "Všetky" }),
+      h("button", { "aria-pressed": String(notesFilter === "free"), onclick: () => setF("free"), text: "Bez akcie" }),
+      h("button", { "aria-pressed": String(notesFilter === "linked"), onclick: () => setF("linked"), text: "K akciám" })) : null;
+    const tools = h("div", { class: "board-tools" }, boardSwitch(), filter, h("span", { class: "tools-gap" }),
       h("button", { class: "primary", type: "button", id: "note-new", onclick: () => openNote(null), text: "+ Nová poznámka" }));
     const grid = h("div", { class: "notes-grid" }, list.map(n => {
       const items = noteItems(n), done = items.filter(i => i.done).length;
@@ -1236,6 +1261,7 @@ main { padding-bottom: 40px; }
           h("strong", { text: n.title || (items.length ? "Checklist" : "Poznámka") }),
           n.pinned ? h("span", { class: "pin", text: "pripnuté" }) : null,
           items.length ? h("span", { class: "prog", text: done + "/" + items.length }) : null),
+        eventChip(n),
         n.body && n.body.trim() ? h("p", { class: "note-body", text: n.body }) : null,
         items.length ? h("ul", { class: "note-list" }, items.map((it, i) => {
           const cb = h("input", { type: "checkbox", id: "nc-" + n.id.slice(0, 8) + "-" + i, "aria-label": it.text });
@@ -1249,15 +1275,27 @@ main { padding-bottom: 40px; }
     viewEl.replaceChildren(...[
       tools,
       notesMissing ? h("p", { class: "notice", text: "Poznámky sa zatiaľ nedajú uložiť do databázy. V Supabase spusti súbor supabase-poznamky.sql (pozri README)." }) : null,
-      list.length ? grid : h("div", { class: "agenda notes-empty" },
+      list.length ? grid : state.notes.size ? h("p", { class: "empty", text: notesFilter === "free" ? "Žiadne poznámky bez akcie." : "Žiadne poznámky priradené k akciám." }) : h("div", { class: "agenda notes-empty" },
         h("h2", { text: "Zatiaľ žiadne poznámky" }),
         h("p", { class: "hint", text: "Poznámky nepatria k žiadnej akcii ani odberateľovi. Môže to byť obyčajný text, checklist alebo oboje, napr. nákupný zoznam alebo veci na opravu." }),
         h("button", { class: "primary", type: "button", onclick: () => openNote(null), text: "+ Nová poznámka" })),
     ].filter(Boolean));
   }
-  function openNote(noteId) {
+  function openNote(noteId, forEvent) {
     const src = noteId ? state.notes.get(noteId) : null;
-    const draft = src ? JSON.parse(JSON.stringify(src)) : { title: "", body: "", items: [], pinned: false };
+    const draft = src ? JSON.parse(JSON.stringify(src)) : { title: "", body: "", items: [], pinned: false, event_id: forEvent || null };
+    draft._hadEvent = !!(src && src.event_id);
+    // event picker: upcoming events first, then the most recent past ones
+    const t0 = todayIso();
+    const evs = [...state.events.values()];
+    const upcoming = evs.filter(e => lastDay(e) >= t0).sort((a, b) => a.date.localeCompare(b.date));
+    const past = evs.filter(e => lastDay(e) < t0).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 60);
+    const evSel = h("select", { id: "n-event" },
+      h("option", { value: "", text: "— nepatrí k žiadnej akcii —" }),
+      upcoming.length ? h("optgroup", { label: "Nadchádzajúce a prebiehajúce" }, upcoming.map(e => h("option", { value: e.id, text: evLabel(e) }))) : null,
+      past.length ? h("optgroup", { label: "Minulé" }, past.map(e => h("option", { value: e.id, text: evLabel(e) }))) : null);
+    if (draft.event_id && !state.events.has(draft.event_id)) evSel.append(h("option", { value: draft.event_id, text: "(vymazaná akcia)" }));
+    evSel.value = draft.event_id || "";
     draft.items = noteItems(draft);
     const root = document.getElementById("modal-root");
     const err = h("p", { class: "err", hidden: true });
@@ -1297,6 +1335,7 @@ main { padding-bottom: 40px; }
     const form = h("form", { class: "modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "n-h" },
       h("h2", { id: "n-h", text: src ? "Upraviť poznámku" : "Nová poznámka" }),
       h("div", { class: "field" }, h("label", { for: "n-title", text: "Nadpis" }), title),
+      h("div", { class: "field" }, h("label", { for: "n-event", text: "Patrí k akcii" }), evSel),
       h("div", { class: "field" }, h("label", { for: "n-body", text: "Text" }), body, h("div", {}, convert)),
       h("div", { class: "field" }, h("span", { class: "lbl", text: "Checklist" }), checks,
         h("div", { class: "add-check" }, newItem, h("button", { class: "ghost", type: "button", onclick: addItem, text: "Pridať" }))),
@@ -1307,7 +1346,7 @@ main { padding-bottom: 40px; }
     form.addEventListener("submit", async e => {
       e.preventDefault();
       if (newItem.value.trim()) addItem();
-      draft.title = title.value; draft.body = body.value; draft.pinned = pin.checked;
+      draft.title = title.value; draft.body = body.value; draft.pinned = pin.checked; draft.event_id = evSel.value || null;
       saveBtn.disabled = true;
       try { await saveNote(draft); close(); toast(src ? "Uložené" : "Poznámka pridaná"); }
       catch (m) { err.textContent = m; err.hidden = false; saveBtn.disabled = false; }
@@ -1525,8 +1564,25 @@ main { padding-bottom: 40px; }
     ].filter(Boolean));
   }
 
+  // notes from the board that belong to the event being edited
+  let editingEventId = null;
+  function linkedNotesBox() {
+    const ns = editingEventId ? sortedNotes().filter(n => n.event_id === editingEventId) : [];
+    if (!ns.length) return null;
+    return h("div", { class: "linked-notes" },
+      h("span", { class: "hint", text: "Z nástenky:" }),
+      ...ns.map(n => {
+        const items = noteItems(n), done = items.filter(i => i.done).length;
+        return h("div", { class: "ln" },
+          h("strong", { text: n.title || (items.length ? "Checklist" : "Poznámka") }),
+          items.length ? h("span", { class: "prog", text: done + "/" + items.length }) : null,
+          n.body && n.body.trim() ? h("span", { class: "ln-body", text: n.body.trim().split("\n")[0] }) : null);
+      }));
+  }
+
   // ---------- Editor ----------
   function openEditor(id, dateStr) {
+    editingEventId = id || null;
     if (readOnly) { toast("Tento diár môžeš len prezerať."); }
     const src = id ? state.events.get(id) : null;
     const draft = src ? JSON.parse(JSON.stringify(src)) : {
@@ -1950,7 +2006,7 @@ main { padding-bottom: 40px; }
         daysBox,
       ),
       h("div", { class: "field" }, h("span", { class: "lbl", text: "Stav" }), statusBox),
-      h("div", { class: "field" }, h("label", { for: "f-notes", text: "Poznámky" }), notes),
+      h("div", { class: "field" }, h("label", { for: "f-notes", text: "Poznámky" }), notes, linkedNotesBox()),
       h("div", { class: "field" }, h("span", { class: "lbl", text: "Checklist" }), checks,
         h("div", { class: "add-check" }, newCheck, h("button", { class: "ghost", type: "button", onclick: addCheck, text: "Pridať" }))),
       h("div", { class: "field" }, h("span", { class: "lbl", text: "Prílohy (PDF)" }), files,

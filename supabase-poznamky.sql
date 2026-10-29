@@ -13,6 +13,10 @@ create table if not exists public.notes (
   updated_at timestamptz not null default now()
 );
 
+-- voliteľné priradenie poznámky k akcii (pri vymazaní akcie ostane poznámka bez akcie)
+alter table public.notes
+  add column if not exists event_id uuid references public.events (id) on delete set null;
+
 create index if not exists notes_user_idx on public.notes (user_id, updated_at desc);
 
 alter table public.notes enable row level security;

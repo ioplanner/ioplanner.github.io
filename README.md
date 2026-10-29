@@ -4,7 +4,7 @@ Súkromný kalendár s mesačným a týždenným pohľadom, kanban nástenkou (*
 
 - Adresa: **https://ioplanner.github.io/**
 - Pohľady sa dajú otvoriť aj priamo: `#mesiac`, `#tyzden`, `#nastenka`, `#poznamky`, `#mzdy`.
-- **Nástenka** má prepínač **Akcie / Poznámky**. *Poznámky* sú voľné, nepatria k žiadnej akcii ani odberateľovi: nadpis, text a/alebo checklist, ktorý odškrtávaš priamo na nástenke. Poznámku môžeš pripnúť navrch; tlačidlo *Riadky textu → checklist* urobí z každého riadku textu položku. Diár si pamätá, ktorý režim si mal naposledy.
+- **Nástenka** má prepínač **Akcie / Poznámky**. *Poznámky*: nadpis, text a/alebo checklist, ktorý odškrtávaš priamo na nástenke. Poznámka môže byť len tak, alebo ju v poli *Patrí k akcii* priradíš k akcii zo zoznamu (nadchádzajúce hore, minulé dole). Priradená poznámka má na karte štítok s akciou (klik otvorí akciu) a zobrazí sa aj v detaile akcie. Filter *Všetky / Bez akcie / K akciám*. Poznámku môžeš pripnúť navrch; tlačidlo *Riadky textu → checklist* urobí z každého riadku textu položku. Diár si pamätá, ktorý režim si mal naposledy.
 - Na mobile: Safari → Zdieľať → *Pridať na plochu*, Chrome → ⋮ → *Pridať na plochu*.
 - **Viacdňové akcie:** keď je dátum konca iný ako dátum začiatku, v akcii sa objaví **Časy po dňoch**: pre každý deň nastavíš vlastný čas od – do (prvý deň začína časom začiatku, posledný končí časom konca; *Všetkým dňom rovnako* skopíruje časy). V kalendári vidíš pri každom dni jeho časy, hodinová mzda sa spočíta zo súčtu hodín po dňoch a v Kalendári Apple je každý deň samostatná udalosť.
 - **Stav sa nastavuje sám podľa dátumu:** budúce akcie sú *Naplánované*, dnešné (aj viacdňové, ktoré práve bežia) *Prebieha*, minulé *Hotovo*.
