@@ -138,6 +138,24 @@ header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; b
 /* Board */
 .board-tools { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; font-size: .88rem; color: var(--muted); }
 .board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.tools-gap { flex: 1; }
+.notes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; align-items: start; }
+.note { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.note.pinned { border-color: var(--accent); }
+.note-head { display: flex; align-items: baseline; gap: 8px; border: 0; background: transparent; padding: 0; text-align: left; width: 100%; }
+.note-head strong { font-family: var(--f-display); font-size: 1.05rem; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.note-head .pin { font-size: .7rem; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: .06em; }
+.note-head .prog { font-family: var(--f-mono); font-size: .75rem; color: var(--muted); }
+.note-body { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .92rem; }
+.note-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.note-list li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: start; }
+.note-list input { width: 18px; height: 18px; margin-top: 1px; accent-color: var(--accent); }
+.note-list label { overflow-wrap: anywhere; cursor: pointer; font-size: .92rem; text-transform: none; letter-spacing: normal; font-weight: 400; color: var(--ink); }
+.note-list li.done label { text-decoration: line-through; color: var(--muted); }
+.notes-empty { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.notes-empty h2 { margin: 0; font-family: var(--f-display); font-size: 1.2rem; }
+.pin-row { display: flex; align-items: center; gap: 8px; font-size: .92rem; cursor: pointer; }
+.pin-row input { width: 18px; height: 18px; accent-color: var(--accent); }
 .col { min-width: 0; background: var(--surface-2); border: 1px solid var(--line); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 8px; min-height: 200px; border-top: 4px solid var(--todo); }
 .col[data-s="doing"] { border-top-color: var(--doing); }
 .col[data-s="done"] { border-top-color: var(--done); }
@@ -413,13 +431,17 @@ main { padding-bottom: 40px; }
     cursor: new Date(),
     selected: todayIso(),
     boardScope: "upcoming",
+    boardMode: "events",          // "events" = kanban of events, "notes" = free notes and checklists
+    notes: new Map(),
     payScope: "all",
     workplaces: new Map(),
     events: new Map(),
   };
   try { const v = localStorage.getItem("diar.view"); if (v) state.view = v; } catch (e) {}
-  const hashMap = { mesiac: "month", tyzden: "week", nastenka: "board", mzdy: "pay" };
+  try { const m = localStorage.getItem("diar.boardMode"); if (m === "notes" || m === "events") state.boardMode = m; } catch (e) {}
+  const hashMap = { mesiac: "month", tyzden: "week", nastenka: "board", mzdy: "pay", poznamky: "board" };
   if (hashMap[location.hash.slice(1)]) state.view = hashMap[location.hash.slice(1)];
+  if (location.hash === "#poznamky") state.boardMode = "notes";
 
   let sb = null;         // Supabase client
   let uid = null;        // signed-in user id
@@ -430,6 +452,7 @@ main { padding-bottom: 40px; }
     if (!localMode) return;
     try { localStorage.setItem("diar.workplaces", JSON.stringify([...state.workplaces.values()])); } catch (e) {}
     try { localStorage.setItem("diar.suppliers", JSON.stringify([...state.suppliers.values()])); } catch (e) {}
+    try { localStorage.setItem("diar.notes", JSON.stringify([...state.notes.values()])); } catch (e) {}
   }
   function saveLocal() {
     if (!localMode) return;
@@ -1078,13 +1101,22 @@ main { padding-bottom: 40px; }
     viewEl.replaceChildren(week);
   }
 
+  function boardSwitch() {
+    const set = m => { state.boardMode = m; try { localStorage.setItem("diar.boardMode", m); } catch (e) {} render(); };
+    return h("div", { class: "seg board-mode", role: "group", "aria-label": "Čo zobraziť na nástenke" },
+      h("button", { id: "bm-events", "aria-pressed": String(state.boardMode === "events"), onclick: () => set("events"), text: "Akcie" }),
+      h("button", { id: "bm-notes", "aria-pressed": String(state.boardMode === "notes"), onclick: () => set("notes"), text: "Poznámky" + (state.notes.size ? " · " + state.notes.size : "") }));
+  }
   function renderBoard() {
+    if (state.boardMode === "notes") return renderNotes();
     periodEl.replaceChildren("Nástenka ", h("span", { text: state.boardScope === "upcoming" ? "od dnes" : "všetko" }));
     const t = todayIso();
     let all = sortEvents([...state.events.values()]);
     const recent = iso(addDays(parse(t), -14));
     if (state.boardScope === "upcoming") all = all.filter(e => lastDay(e) >= recent);
     const tools = h("div", { class: "board-tools" },
+      boardSwitch(),
+      h("span", { class: "tools-gap" }),
       h("span", { text: "Zobraziť:" }),
       h("div", { class: "seg", role: "group", "aria-label": "Rozsah nástenky" },
         h("button", { id: "scope-up", "aria-pressed": String(state.boardScope === "upcoming"), onclick: () => { state.boardScope = "upcoming"; render(); }, text: "Aktuálne" }),
@@ -1149,6 +1181,143 @@ main { padding-bottom: 40px; }
     if (/password/i.test(m)) return "Heslo musí mať aspoň 6 znakov.";
     if (/fetch/i.test(m)) return "Nepodarilo sa spojiť so Supabase. Skontroluj pripojenie a adresu v nastavení.";
     return "Prihlásenie zlyhalo: " + m;
+  }
+
+  // ---------- Notes (free notes and checklists, not tied to an event) ----------
+  let notesMissing = false;
+  const noteItems = n => Array.isArray(n.items) ? n.items : [];
+  function sortedNotes() {
+    return [...state.notes.values()].sort((a, b) => (!!b.pinned - !!a.pinned) || String(b.updated_at || b.updated || "").localeCompare(String(a.updated_at || a.updated || "")));
+  }
+  function noteFriendly(e) {
+    const m = ((e && e.message) || "") + "";
+    if (/notes|relation|schema cache|does not exist/i.test(m)) return "Databáza ešte nepozná poznámky. V Supabase spusti súbor supabase-poznamky.sql (pozri README).";
+    if (/fetch|network/i.test(m)) return "Si offline. Poznámku sa nepodarilo uložiť.";
+    return "Poznámku sa nepodarilo uložiť: " + (m || "neznáma chyba");
+  }
+  async function saveNote(n) {
+    const row = {
+      id: n.id || newId(), title: (n.title || "").trim(), body: n.body || "",
+      items: noteItems(n).filter(i => (i.text || "").trim()).map(i => ({ id: i.id || Math.random().toString(36).slice(2, 9), text: i.text.trim(), done: !!i.done })),
+      pinned: !!n.pinned, updated_at: new Date().toISOString(),
+    };
+    if (!row.title && !row.body.trim() && !row.items.length) throw "Poznámka je prázdna. Napíš nadpis, text alebo položku.";
+    if (!sb || !uid) { state.notes.set(row.id, row); saveLocalWp(); return row; }
+    const { error } = await sb.from("notes").upsert(row);
+    if (error) throw noteFriendly(error);
+    notesMissing = false; state.notes.set(row.id, row); cacheNotes();
+    return row;
+  }
+  async function deleteNote(id) {
+    if (!sb || !uid) { state.notes.delete(id); saveLocalWp(); return; }
+    const { error } = await sb.from("notes").delete().eq("id", id);
+    if (error) throw noteFriendly(error);
+    state.notes.delete(id); cacheNotes();
+  }
+  function cacheNotes() { if (uid) try { localStorage.setItem("diar.notescache." + uid, JSON.stringify([...state.notes.values()])); } catch (e) {} }
+  let noteBusy = false;
+  async function toggleNoteItem(n, idx) {
+    if (noteBusy) return;
+    noteBusy = true;
+    const copy = { ...n, items: noteItems(n).map((it, i) => i === idx ? { ...it, done: !it.done } : it) };
+    state.notes.set(n.id, copy); render();
+    try { await saveNote(copy); } catch (m) { state.notes.set(n.id, n); toast(m); }
+    noteBusy = false; render();
+  }
+  function renderNotes() {
+    periodEl.replaceChildren("Nástenka ", h("span", { text: "poznámky" }));
+    const list = sortedNotes();
+    const tools = h("div", { class: "board-tools" }, boardSwitch(), h("span", { class: "tools-gap" }),
+      h("button", { class: "primary", type: "button", id: "note-new", onclick: () => openNote(null), text: "+ Nová poznámka" }));
+    const grid = h("div", { class: "notes-grid" }, list.map(n => {
+      const items = noteItems(n), done = items.filter(i => i.done).length;
+      const card = h("article", { class: "note" + (n.pinned ? " pinned" : "") },
+        h("button", { class: "note-head", type: "button", onclick: () => openNote(n.id), "aria-label": "Upraviť poznámku " + (n.title || "") },
+          h("strong", { text: n.title || (items.length ? "Checklist" : "Poznámka") }),
+          n.pinned ? h("span", { class: "pin", text: "pripnuté" }) : null,
+          items.length ? h("span", { class: "prog", text: done + "/" + items.length }) : null),
+        n.body && n.body.trim() ? h("p", { class: "note-body", text: n.body }) : null,
+        items.length ? h("ul", { class: "note-list" }, items.map((it, i) => {
+          const cb = h("input", { type: "checkbox", id: "nc-" + n.id.slice(0, 8) + "-" + i, "aria-label": it.text });
+          cb.checked = !!it.done;
+          cb.addEventListener("change", () => toggleNoteItem(n, i));
+          return h("li", { class: it.done ? "done" : "" }, cb, h("label", { for: cb.id, text: it.text }));
+        })) : null,
+        items.length && done === items.length ? h("p", { class: "hint", text: "Všetko hotové." }) : null);
+      return card;
+    }));
+    viewEl.replaceChildren(...[
+      tools,
+      notesMissing ? h("p", { class: "notice", text: "Poznámky sa zatiaľ nedajú uložiť do databázy. V Supabase spusti súbor supabase-poznamky.sql (pozri README)." }) : null,
+      list.length ? grid : h("div", { class: "agenda notes-empty" },
+        h("h2", { text: "Zatiaľ žiadne poznámky" }),
+        h("p", { class: "hint", text: "Poznámky nepatria k žiadnej akcii ani odberateľovi. Môže to byť obyčajný text, checklist alebo oboje, napr. nákupný zoznam alebo veci na opravu." }),
+        h("button", { class: "primary", type: "button", onclick: () => openNote(null), text: "+ Nová poznámka" })),
+    ].filter(Boolean));
+  }
+  function openNote(noteId) {
+    const src = noteId ? state.notes.get(noteId) : null;
+    const draft = src ? JSON.parse(JSON.stringify(src)) : { title: "", body: "", items: [], pinned: false };
+    draft.items = noteItems(draft);
+    const root = document.getElementById("modal-root");
+    const err = h("p", { class: "err", hidden: true });
+    const title = h("input", { id: "n-title", type: "text", value: draft.title || "", maxlength: "140", placeholder: "Nadpis, napr. Kúpiť na sklad" });
+    const body = h("textarea", { id: "n-body", placeholder: "Text poznámky…" }); body.value = draft.body || "";
+    const pin = h("input", { id: "n-pin", type: "checkbox" }); pin.checked = !!draft.pinned;
+    const checks = h("div", { class: "checks" });
+    function drawChecks() {
+      checks.replaceChildren(...draft.items.map((it, i) => {
+        const cb = h("input", { type: "checkbox", id: "n-c-" + i, "aria-label": "Splnené" }); cb.checked = !!it.done;
+        const tx = h("input", { type: "text", id: "n-ct-" + i, value: it.text, "aria-label": "Položka" });
+        const row = h("div", { class: "check" + (it.done ? " done" : "") }, cb, tx,
+          h("button", { class: "x", type: "button", "aria-label": "Odstrániť položku", onclick: () => { draft.items.splice(i, 1); drawChecks(); }, text: "×" }));
+        cb.addEventListener("change", () => { it.done = cb.checked; row.classList.toggle("done", it.done); });
+        tx.addEventListener("input", () => { it.text = tx.value; });
+        return row;
+      }));
+      convert.hidden = !body.value.trim();
+    }
+    const newItem = h("input", { id: "n-new", type: "text", placeholder: "Pridať položku a stlačiť Enter" });
+    const addItem = () => { const v = newItem.value.trim(); if (!v) return; draft.items.push({ id: Math.random().toString(36).slice(2, 9), text: v, done: false }); newItem.value = ""; drawChecks(); newItem.focus(); };
+    newItem.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addItem(); } });
+    // turn the lines of the text into checklist items
+    const convert = h("button", { class: "ghost mini", type: "button", text: "Riadky textu → checklist", onclick: () => {
+      body.value.split(/\n+/).map(l => l.replace(/^\s*([-*•]|\d+[.)]|\[\s?[xX]?\s?\])\s*/, "").trim()).filter(Boolean)
+        .forEach(t => draft.items.push({ id: Math.random().toString(36).slice(2, 9), text: t, done: false }));
+      body.value = ""; drawChecks();
+    } });
+    body.addEventListener("input", () => { convert.hidden = !body.value.trim(); });
+    drawChecks();
+    const saveBtn = h("button", { class: "primary", type: "submit", text: src ? "Uložiť" : "Pridať poznámku" });
+    let armed = false;
+    const delBtn = src ? h("button", { class: "danger", type: "button", text: "Vymazať", onclick: async () => {
+      if (!armed) { armed = true; delBtn.classList.add("armed"); delBtn.textContent = "Naozaj vymazať?"; return; }
+      try { await deleteNote(src.id); close(); toast("Poznámka vymazaná"); } catch (m) { err.textContent = m; err.hidden = false; }
+    } }) : null;
+    const form = h("form", { class: "modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "n-h" },
+      h("h2", { id: "n-h", text: src ? "Upraviť poznámku" : "Nová poznámka" }),
+      h("div", { class: "field" }, h("label", { for: "n-title", text: "Nadpis" }), title),
+      h("div", { class: "field" }, h("label", { for: "n-body", text: "Text" }), body, h("div", {}, convert)),
+      h("div", { class: "field" }, h("span", { class: "lbl", text: "Checklist" }), checks,
+        h("div", { class: "add-check" }, newItem, h("button", { class: "ghost", type: "button", onclick: addItem, text: "Pridať" }))),
+      h("label", { class: "pin-row", for: "n-pin" }, pin, " Pripnúť navrch"),
+      err,
+      h("div", { class: "modal-foot" }, delBtn, h("span", { class: "spacer" }),
+        h("button", { class: "ghost", type: "button", onclick: () => close(), text: "Zrušiť" }), saveBtn));
+    form.addEventListener("submit", async e => {
+      e.preventDefault();
+      if (newItem.value.trim()) addItem();
+      draft.title = title.value; draft.body = body.value; draft.pinned = pin.checked;
+      saveBtn.disabled = true;
+      try { await saveNote(draft); close(); toast(src ? "Uložené" : "Poznámka pridaná"); }
+      catch (m) { err.textContent = m; err.hidden = false; saveBtn.disabled = false; }
+    });
+    const overlay = h("div", { class: "overlay", onclick: e => { if (e.target === overlay) close(); } }, form);
+    function onKey(e) { if (e.key === "Escape") close(); }
+    function close() { document.removeEventListener("keydown", onKey); root.replaceChildren(); render(); }
+    document.addEventListener("keydown", onKey);
+    root.replaceChildren(overlay);
+    if (!src) setTimeout(() => title.focus(), 30);
   }
 
   function render() {
@@ -1954,6 +2123,7 @@ main { padding-bottom: 40px; }
       saved.forEach(e => { if (e && e.id && e.title) state.events.set(e.id, e); });
       JSON.parse(localStorage.getItem("diar.workplaces") || "[]").forEach(w => { if (w && w.id) state.workplaces.set(w.id, w); });
       JSON.parse(localStorage.getItem("diar.suppliers") || "[]").forEach(r => { if (r && r.name) state.suppliers.set(supKey(r.name), r); });
+      JSON.parse(localStorage.getItem("diar.notes") || "[]").forEach(n => { if (n && n.id) state.notes.set(n.id, n); });
     } catch (e) {}
     syncEl.textContent = "len toto zariadenie";
     notice.textContent = !window.supabase && configured
@@ -1996,6 +2166,9 @@ main { padding-bottom: 40px; }
     const sups = await sb.from("suppliers").select("*").order("name");
     if (sups.error) supMissing = /suppliers|relation|schema cache/i.test(sups.error.message || "");
     else { supMissing = sups.data.length > 0 && !("archived" in sups.data[0]); state.suppliers = new Map(sups.data.map(r => [supKey(r.name), r])); }
+    const nts = await sb.from("notes").select("*").limit(2000);
+    if (nts.error) notesMissing = /notes|relation|schema cache|does not exist/i.test(nts.error.message || "");
+    else { notesMissing = false; state.notes = new Map(nts.data.map(n => [n.id, n])); cacheNotes(); }
     syncEl.textContent = "synchronizované";
     if (!modalOpen()) render();
   }
@@ -2017,6 +2190,7 @@ main { padding-bottom: 40px; }
     try {
       const cached = JSON.parse(localStorage.getItem("diar.cache." + uid) || "[]");
       state.events = new Map(cached.filter(e => e && e.id).map(e => [e.id, e]));
+      state.notes = new Map(JSON.parse(localStorage.getItem("diar.notescache." + uid) || "[]").filter(n => n && n.id).map(n => [n.id, n]));
       const wc = JSON.parse(localStorage.getItem("diar.wpcache." + uid) || "[]");
       state.workplaces = new Map(wc.filter(w => w && w.id).map(w => [w.id, w]));
     } catch (e) { state.events = new Map(); }
@@ -2026,6 +2200,7 @@ main { padding-bottom: 40px; }
       .on("postgres_changes", { event: "*", schema: "public", table: "events", filter: "user_id=eq." + uid }, scheduleLoad)
       .on("postgres_changes", { event: "*", schema: "public", table: "workplaces", filter: "user_id=eq." + uid }, scheduleLoad)
       .on("postgres_changes", { event: "*", schema: "public", table: "suppliers", filter: "user_id=eq." + uid }, scheduleLoad)
+      .on("postgres_changes", { event: "*", schema: "public", table: "notes", filter: "user_id=eq." + uid }, scheduleLoad)
       .subscribe();
   }
 
