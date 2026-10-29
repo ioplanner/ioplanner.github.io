@@ -13,7 +13,7 @@ Súkromný kalendár s mesačným a týždenným pohľadom, kanban nástenkou (*
 
 ## 1. Supabase (databáza)
 
-1. V projekte otvor **SQL Editor** → **New query**, vlož celý obsah súboru **supabase.sql** a stlač **Run**. Má sa ukázať *Success*. To isté potom urob so súbormi **supabase-prilohy.sql** (prílohy PDF) **supabase-viacdnove.sql** (akcie cez viac dní) a **supabase-mzdy.sql** (pracovné miesta a mzdy) a **supabase-dodavatelia.sql** (zoznam dodávateľov a logá; obsahuje aj supabase-loga.sql) a **supabase-dni.sql** (časy po dňoch) a **supabase-poznamky.sql** (poznámky na nástenke).
+1. V projekte otvor **SQL Editor** → **New query**, vlož celý obsah súboru **supabase.sql** a stlač **Run**. Má sa ukázať *Success*. To isté potom urob so súbormi **supabase-prilohy.sql** (prílohy PDF) **supabase-viacdnove.sql** (akcie cez viac dní) a **supabase-mzdy.sql** (pracovné miesta a mzdy) a **supabase-dodavatelia.sql** (zoznam dodávateľov a logá; obsahuje aj supabase-loga.sql) a **supabase-dni.sql** (časy po dňoch) a **supabase-poznamky.sql** (poznámky na nástenke) a **supabase-montaz.sql** (zoznam na montáž).
 2. **Vytvor si prihlasovací účet:** **Authentication** → **Users** → **Add user** → **Create new user**. Zadaj e-mail a heslo a zaškrtni **Auto Confirm User**.
 3. **Zakáž registráciu cudzím:** **Authentication** → *Sign In / Providers* → vypni **Allow new users to sign up**.
 4. **Údaje na pripojenie:** **Project Settings** → **API Keys** → verejný kľúč **publishable** (`sb_publishable_…`), nie *secret* / *service_role*.
@@ -53,6 +53,7 @@ Zmeny: otvor súbor na GitHube → ceruzka → uprav → **Commit changes**. Str
 | „Databáza ešte nepozná pracovné miesta“ | spusti supabase-mzdy.sql |
 | „Databáza ešte nepozná zoznam dodávateľov a logá“ | spusti supabase-dodavatelia.sql |
 | „Databáza ešte nepozná poznámky“ | spusti supabase-poznamky.sql |
+| „Databáza ešte nevie uložiť zoznam na montáž“ | spusti supabase-montaz.sql |
 | „chýba tabuľka pre kalendár“ | spusti supabase-kalendar.sql |
 | Kalendár Apple hlási chybu alebo „Vyskúšať adresu“ ukáže *Missing authorization header* | vo funkcii **swift-service** vypni **Verify JWT** |
 | „Vyskúšať adresu“ ukáže *Function not found* | funkcia ešte nie je nasadená (Kalendár Apple, krok 2) |
@@ -67,7 +68,8 @@ Zmeny: otvor súbor na GitHube → ceruzka → uprav → **Commit changes**. Str
   - Položky odškrtávaš, čo máš zobraté; po **Uložiť** sa odškrtnutia zapamätajú.
   - Chýbajúcu vec dopíšeš ručne do poľa *Pridať položku ručne*; **Načítať znova** ju nezmaže.
   - **Exportovať CSV** stiahne súpis (Položka; Počet; Jednotka; Zobraté) pre Excel alebo Numbers. Pri viacerých ponukách v jednej akcii je aj *Exportovať všetky položky*.
-  - Pri staršej ponuke, ktorú si priložil skôr, klikni **Načítať položky z PDF**.
+  - Zoznam **Na montáž patrí k akcii**, nie k súboru: ostane, aj keď cenovú ponuku odstrániš. Keď nahráš novšiu verziu ponuky, nové položky sa pridajú, odškrtnuté ostanú odškrtnuté a položky, ktoré v novej ponuke už nie sú, sa len označia (*Odstrániť ich* ich zmaže naraz).
+  - Pri cenovej ponuke je tlačidlo **Načítať položky**, ktoré ponuku prečíta znova.
 
 ## Pracovné miesta a mzdy
 
