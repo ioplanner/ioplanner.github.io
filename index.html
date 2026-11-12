@@ -330,6 +330,8 @@ header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; b
 .q-items[hidden] { display: none; }
 .gone-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--doing); }
 .q-list li.gone .q-name { color: var(--muted); }
+.visually-hidden { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.files.drop { outline: 2px dashed var(--accent); outline-offset: 4px; border-radius: 10px; }
 .file-add { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .file-add .hint { color: var(--muted); font-size: .8rem; }
 .feed-lead { margin: 0; color: var(--muted); }
@@ -1911,9 +1913,9 @@ main { padding-bottom: 40px; }
     const canFiles = !!(sb && uid);
     const files = h("div", { class: "files" });
     const fileErr = h("p", { class: "err", hidden: true });
-    const picker = h("input", { id: "f-files", type: "file", accept: "application/pdf,.pdf", multiple: true, hidden: true });
+    const picker = h("input", { id: "f-files", type: "file", multiple: true, class: "visually-hidden", tabindex: "-1", "aria-hidden": "true" });
     const addFileBtn = h("button", { class: "ghost", type: "button", disabled: !canFiles, onclick: () => picker.click(), text: "+ Priložiť PDF" });
-    const fileHint = h("span", { class: "hint", text: canFiles ? "Cenové ponuky, faktúry… max " + MAX_MB + " MB" : "Prílohy sa dajú pridávať po prihlásení." });
+    const fileHint = h("span", { class: "hint", text: canFiles ? "alebo PDF pretiahni sem · max " + MAX_MB + " MB" : "Prílohy sa dajú pridávať po prihlásení." });
     const uploadedFiles = new Map();   // path -> File picked in this dialog, read without downloading
     const reading = new Set();
     const readErrs = new Map();   // file path -> message from the last read
@@ -2014,10 +2016,19 @@ main { padding-bottom: 40px; }
       drawPack();
     }
     drawFiles();
-    picker.addEventListener("change", async () => {
-      const list = [...picker.files]; picker.value = "";
+    picker.addEventListener("change", () => { const list = [...picker.files]; picker.value = ""; addPdfs(list); });
+    // drag and drop PDFs onto the attachments area
+    ["dragenter", "dragover"].forEach(t => files.addEventListener(t, e => { if (!canFiles) return; e.preventDefault(); files.classList.add("drop"); }));
+    ["dragleave", "drop"].forEach(t => files.addEventListener(t, () => files.classList.remove("drop")));
+    files.addEventListener("drop", e => { if (!canFiles) return; e.preventDefault(); addPdfs([...(e.dataTransfer.files || [])]); });
+    async function addPdfs(list) {
       if (!list.length) return;
-      fileErr.hidden = true; busyUploads++;
+      const bad = list.filter(f => !(f.type === "application/pdf" || /\.pdf$/i.test(f.name)));
+      list = list.filter(f => !bad.includes(f));
+      if (bad.length) { fileErr.textContent = "Dá sa priložiť iba PDF: " + bad.map(f => f.name).join(", "); fileErr.hidden = false; }
+      else fileErr.hidden = true;
+      if (!list.length) return;
+      busyUploads++;
       addFileBtn.disabled = true; saveBtn.disabled = true;
       for (const f of list) {
         addFileBtn.textContent = "Nahrávam " + f.name + "…";
@@ -2030,7 +2041,7 @@ main { padding-bottom: 40px; }
       }
       busyUploads--;
       addFileBtn.textContent = "+ Priložiť PDF"; addFileBtn.disabled = false; saveBtn.disabled = false;
-    });
+    }
 
     const saveBtn = h("button", { class: "primary", type: "submit", text: src ? "Uložiť zmeny" : "Pridať akciu" });
     let armed = false;
