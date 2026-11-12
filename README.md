@@ -104,3 +104,14 @@ Akcie z diára sa dajú odoberať v aplikácii Kalendár na iPhone, iPade a Macu
 - **iPhone:** *Nastavenia → Aplikácie → Kalendár → Účty kalendárov → Pridať účet → Iné → Pridať odoberaný kalendár*.
 
 Adresu nikomu neposielaj. Ak ju niekto získa, v diári klikni **Vytvoriť novú adresu**, stará prestane fungovať.
+
+### Opačný smer: Kalendár Apple v diári
+
+Udalosti z tvojich kalendárov v iCloude sa môžu zobrazovať aj priamo v diári (mesiac, týždeň, deň), vo vlastnej farbe a len na čítanie.
+
+1. Funkcia **swift-service** musí mať aktuálny kód zo súboru **supabase/functions/kalendar/index.ts** (číta zverejnený kalendár za diár, lebo prehliadač to sám nedovolí).
+2. V Kalendári zverejni kalendár: **Mac** – pravým tlačidlom na kalendár → *Zdieľať kalendár…* → *Verejný kalendár* → skopíruj adresu; **iPhone** – *Kalendáre* → (i) → *Verejný kalendár* → *Zdieľať odkaz*.
+3. V diári **Kalendár Apple** → časť *Kalendár Apple v diári* → názov + adresa → **Pridať kalendár**. Každý kalendár sa dá vypnúť, prefarbiť alebo odobrať; nastavenie je uložené v tvojom účte, takže platí na všetkých zariadeniach.
+4. Klik na udalosť ukáže detail a tlačidlo **Vytvoriť akciu v diári**, ktoré z nej predvyplní novú akciu.
+
+Opakované udalosti, výnimky, presunuté termíny, celodenné aj viacdňové udalosti sa zobrazujú správne. Zmeny z Kalendára sa v diári objavia pri jeho otvorení (Apple zverejnený kalendár niekedy aktualizuje s oneskorením niekoľkých minút). Akcie z diára, ktoré odoberáš do Kalendára, sa sem späť nenačítajú, aby neboli dvakrát.

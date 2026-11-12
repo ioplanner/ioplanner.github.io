@@ -200,9 +200,42 @@ async function rest(path) {
   return r.json();
 }
 
+// ---- Reading a published Apple / iCloud calendar for the diary (browsers cannot load it directly) ----
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+};
+const ALLOWED_HOSTS = /(^|\.)(icloud\.com|google\.com|outlook\.com|office365\.com|live\.com)$/i;
+async function proxyCalendar(req, target) {
+  // only for people signed in to the diary
+  const auth = req.headers.get("authorization") || "";
+  const key = req.headers.get("apikey") || Deno.env.get("SUPABASE_ANON_KEY") || "";
+  const who = await fetch(Deno.env.get("SUPABASE_URL") + "/auth/v1/user", { headers: { Authorization: auth, apikey: key } });
+  if (!who.ok) return new Response("Najprv sa prihlás do diára.", { status: 401, headers: { ...CORS, "Content-Type": "text/plain; charset=utf-8" } });
+  let u;
+  try { u = new URL(target.trim().replace(/^webcals?:\/\//i, "https://")); } catch (_) { u = null; }
+  if (!u || !/^https?:$/.test(u.protocol) || !ALLOWED_HOSTS.test(u.hostname)) {
+    return new Response("Táto adresa nie je verejný kalendár iCloud (alebo Google / Outlook).", { status: 400, headers: { ...CORS, "Content-Type": "text/plain; charset=utf-8" } });
+  }
+  u.protocol = "https:";
+  const r = await fetch(u.toString(), { headers: { "User-Agent": "ioPlanner", Accept: "text/calendar, */*" }, redirect: "follow" });
+  const body = await r.text();
+  if (!r.ok || !/BEGIN:VCALENDAR/.test(body)) {
+    return new Response("Kalendár sa nepodarilo načítať (" + r.status + "). Skontroluj, či je kalendár zverejnený.", { status: 502, headers: { ...CORS, "Content-Type": "text/plain; charset=utf-8" } });
+  }
+  return new Response(body, { status: 200, headers: { ...CORS, "Content-Type": "text/calendar; charset=utf-8", "Cache-Control": "no-store" } });
+}
+
 if (typeof Deno !== "undefined" && Deno.serve) {
   Deno.serve(async (req) => {
+    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
     if (req.method !== "GET" && req.method !== "HEAD") return text("Povolené je iba GET.", 405);
+    const proxy = new URL(req.url).searchParams.get("proxy");
+    if (proxy) {
+      try { return await proxyCalendar(req, proxy); }
+      catch (e) { return new Response("Kalendár sa nepodarilo načítať. " + (e && e.message ? e.message : ""), { status: 500, headers: { ...CORS, "Content-Type": "text/plain; charset=utf-8" } }); }
+    }
     const token = new URL(req.url).searchParams.get("t") || "";
     if (!/^[a-f0-9]{32,128}$/.test(token)) return text("Chýba alebo je neplatný kľúč kalendára.", 404);
     try {

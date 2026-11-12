@@ -142,6 +142,20 @@ header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; b
 .board-tools { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; font-size: .88rem; color: var(--muted); }
 .board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
 .tools-gap { flex: 1; }
+.chip.ext { background: transparent; border: 1px dashed var(--line); border-left: 3px solid; }
+.card.ext { border-left-width: 4px; border-left-style: solid; background: var(--surface-2); }
+.cal-tag { display: inline-flex; align-items: center; gap: 5px; font-size: .75rem; color: var(--muted); }
+.cal-tag i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.feed-import { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; }
+.feed-import h3 { margin: 0; font-family: var(--f-display); font-size: 1.05rem; }
+.fi-row { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.fi-row input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
+.fi-row input[type=color] { width: 28px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; }
+.fi-name { display: flex; flex-direction: column; min-width: 0; text-transform: none; letter-spacing: normal; font-size: .9rem; color: var(--ink); font-weight: 400; }
+.fi-name .err, .fi-name .hint { font-size: .78rem; overflow-wrap: anywhere; }
+.fi-add { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto; gap: 6px; }
+.fi-add input { min-width: 0; border: 1px solid var(--line); background: var(--surface-2); border-radius: 9px; padding: 8px 10px; }
+@media (max-width: 620px) { .fi-add { grid-template-columns: minmax(0, 1fr); } }
 .notes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; align-items: start; }
 .note { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .note.pinned { border-color: var(--accent); }
@@ -1072,6 +1086,7 @@ main { padding-bottom: 40px; }
     for (let d = start; d <= end; d = addDays(d, 1)) {
       const ds = iso(d);
       const evs = eventsOn(ds);
+      const xs = extOn(ds);
       const cls = ["cell"];
       if (d.getMonth() !== c.getMonth()) cls.push("out");
       if (ds === t) cls.push("today");
@@ -1087,18 +1102,22 @@ main { padding-bottom: 40px; }
         class: "chip", dataset: { s: ev.status }, title: ev.title,
         onclick: e => { e.stopPropagation(); openEditor(ev.id); },
       }, chipLabel(ev, ds) ? h("b", { text: chipLabel(ev, ds) }) : null, ev.title)));
-      if (evs.length > 3) cell.append(h("span", { class: "more", text: "+ ďalšie " + (evs.length - 3) }));
-      if (evs.length) cell.append(h("span", { class: "dots" }, evs.slice(0, 6).map(ev => h("i", { dataset: { s: ev.status } }))));
+      xs.slice(0, Math.max(0, 3 - evs.length)).forEach(o => cell.append(extChip(o, ds)));
+      const total = evs.length + xs.length;
+      if (total > 3) cell.append(h("span", { class: "more", text: "+ ďalšie " + (total - 3) }));
+      if (total) cell.append(h("span", { class: "dots" }, evs.slice(0, 6).map(ev => h("i", { dataset: { s: ev.status } })),
+        xs.slice(0, Math.max(0, 6 - evs.length)).map(o => h("i", { style: "background:" + o.color }))));
       grid.append(cell);
     }
     const sel = state.selected;
     const selEvs = eventsOn(sel);
+    const selXs = extOn(sel);
     const agenda = h("div", { class: "agenda" },
       h("div", { class: "agenda-head" },
         h("h2", { text: fmtDay(sel).replace(/^./, m => m.toUpperCase()) }),
         h("button", { class: "ghost", type: "button", onclick: () => openEditor(null, sel), text: "+ Pridať na tento deň" }),
       ),
-      selEvs.length ? h("div", { class: "list" }, selEvs.map(ev => card(ev, { day: sel }))) :
+      selEvs.length || selXs.length ? h("div", { class: "list" }, selEvs.map(ev => card(ev, { day: sel })), selXs.map(o => extCard(o, sel))) :
         h("p", { class: "empty", text: "Na tento deň nemáš nič naplánované." }),
     );
     viewEl.replaceChildren(h("div", { class: "dow" }, DOW.map(x => h("div", { text: x }))), grid, agenda);
@@ -1120,6 +1139,7 @@ main { padding-bottom: 40px; }
       week.append(h("div", { class: "wday" + (ds === t ? " today" : "") },
         h("div", { class: "wday-h" }, h("strong", { text: DOW_LONG[i].replace(/^./, m => m.toUpperCase()) }), h("span", { text: fmtShort(ds) })),
         evs.map(ev => card(ev, { pill: true, day: ds })),
+        extOn(ds).map(o => extCard(o, ds)),
         h("button", { class: "add-mini", type: "button", onclick: () => openEditor(null, ds), text: "+ pridať" }),
       ));
     }
@@ -1206,6 +1226,297 @@ main { padding-bottom: 40px; }
     if (/password/i.test(m)) return "Heslo musí mať aspoň 6 znakov.";
     if (/fetch/i.test(m)) return "Nepodarilo sa spojiť so Supabase. Skontroluj pripojenie a adresu v nastavení.";
     return "Prihlásenie zlyhalo: " + m;
+  }
+
+  // ---------- Apple / iCloud calendars shown in the diary (read only) ----------
+  // Reads a published calendar (.ics), expands repeating events and returns occurrences as local dates and times.
+  function icsUnfold(text) {
+    return String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\n[ \t]/g, "").split("\n");
+  }
+  function icsUnescape(v) {
+    return String(v || "").replace(/\\n/gi, "\n").replace(/\\([,;\\])/g, "$1");
+  }
+  function icsProp(line) {
+    const i = line.indexOf(":"); if (i < 0) return null;
+    const head = line.slice(0, i), value = line.slice(i + 1);
+    const parts = head.split(";");
+    const params = {};
+    parts.slice(1).forEach(p => { const j = p.indexOf("="); if (j > 0) params[p.slice(0, j).toUpperCase()] = p.slice(j + 1).replace(/^"|"$/g, ""); });
+    return { name: parts[0].toUpperCase(), params, value };
+  }
+  // offset (ms) of a time zone at a given instant
+  function tzOffset(tz, ms) {
+    try {
+      const f = new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      const p = {}; f.formatToParts(new Date(ms)).forEach(x => { p[x.type] = x.value; });
+      return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - ms;
+    } catch (e) { return null; }
+  }
+  // returns { ms, allDay } or null
+  function icsTime(prop) {
+    if (!prop) return null;
+    const v = prop.value.trim();
+    let m = /^(\d{4})(\d{2})(\d{2})$/.exec(v);
+    if (m || prop.params.VALUE === "DATE") {
+      m = m || /^(\d{4})(\d{2})(\d{2})/.exec(v); if (!m) return null;
+      return { ms: new Date(+m[1], +m[2] - 1, +m[3]).getTime(), allDay: true };
+    }
+    m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?(Z)?$/.exec(v);
+    if (!m) return null;
+    const parts = [+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)];
+    if (m[7]) return { ms: Date.UTC(...parts), allDay: false };
+    const tz = prop.params.TZID;
+    if (tz) {
+      const guess = Date.UTC(...parts);
+      const off = tzOffset(tz, guess);
+      if (off !== null) {
+        let ms = guess - off;
+        const off2 = tzOffset(tz, ms);       // second pass for daylight-saving edges
+        if (off2 !== null && off2 !== off) ms = guess - off2;
+        return { ms, allDay: false };
+      }
+    }
+    return { ms: new Date(...parts).getTime(), allDay: false };   // floating time = local
+  }
+  const ICS_DAYS = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
+  // all starts of a repeating event inside [from, to] (ms), keeping the local time of day
+  function icsExpand(startMs, rule, from, to) {
+    const r = {};
+    rule.split(";").forEach(p => { const [k, v] = p.split("="); if (k && v) r[k.toUpperCase()] = v; });
+    const freq = r.FREQ, interval = Math.max(1, parseInt(r.INTERVAL || "1", 10));
+    const count = r.COUNT ? parseInt(r.COUNT, 10) : Infinity;
+    const until = r.UNTIL ? (icsTime({ value: r.UNTIL, params: {} }) || {}).ms : null;
+    const byday = r.BYDAY ? r.BYDAY.split(",").map(x => { const m = /^([+-]?\d+)?([A-Z]{2})$/.exec(x); return m ? { n: m[1] ? parseInt(m[1], 10) : 0, d: ICS_DAYS[m[2]] } : null; }).filter(Boolean) : [];
+    const bymd = r.BYMONTHDAY ? r.BYMONTHDAY.split(",").map(Number) : [];
+    const s = new Date(startMs);
+    const hh = s.getHours(), mi = s.getMinutes(), ss = s.getSeconds();
+    const at = (y, mo, d) => new Date(y, mo, d, hh, mi, ss).getTime();
+    const out = [];
+    let n = 0;
+    const take = ms => {
+      if (ms < startMs) return true;
+      if (until !== null && until !== undefined && ms > until) return false;
+      if (n >= count) return false;
+      n++;
+      if (ms >= from && ms <= to) out.push(ms);
+      return ms <= to && out.length < 1500;
+    };
+    const nthWeekday = (y, mo, wd, nth) => {
+      if (nth > 0) { const f = new Date(y, mo, 1).getDay(); const d = 1 + ((wd - f + 7) % 7) + (nth - 1) * 7; return d <= new Date(y, mo + 1, 0).getDate() ? d : null; }
+      const lastD = new Date(y, mo + 1, 0).getDate(), l = new Date(y, mo, lastD).getDay(); const d = lastD - ((l - wd + 7) % 7) + (nth + 1) * 7; return d >= 1 ? d : null;
+    };
+    for (let i = 0; i < 5000; i++) {
+      let list = [];
+      if (freq === "DAILY") {
+        list = [at(s.getFullYear(), s.getMonth(), s.getDate() + i * interval)];
+      } else if (freq === "WEEKLY") {
+        const ws = new Date(s.getFullYear(), s.getMonth(), s.getDate() - ((s.getDay() + 6) % 7) + i * 7 * interval);
+        const days = byday.length ? byday.map(b => b.d) : [s.getDay()];
+        list = days.map(wd => at(ws.getFullYear(), ws.getMonth(), ws.getDate() + ((wd + 6) % 7))).sort((a, b) => a - b);
+      } else if (freq === "MONTHLY") {
+        const y = s.getFullYear(), mo = s.getMonth() + i * interval;
+        if (byday.length) list = byday.map(b => { const d = nthWeekday(y, mo, b.d, b.n || 1); return d ? at(y, mo, d) : null; }).filter(Boolean);
+        else {
+          const dim = new Date(y, mo + 1, 0).getDate();
+          list = (bymd.length ? bymd : [s.getDate()]).map(d => d < 0 ? dim + d + 1 : d).filter(d => d >= 1 && d <= dim).map(d => at(y, mo, d));
+        }
+        list.sort((a, b) => a - b);
+      } else if (freq === "YEARLY") {
+        const y = s.getFullYear() + i * interval;
+        if (new Date(y, s.getMonth(), s.getDate()).getMonth() === s.getMonth()) list = [at(y, s.getMonth(), s.getDate())];
+      } else return [startMs >= from && startMs <= to ? startMs : null].filter(x => x !== null);
+      let go = true;
+      for (const ms of list) { if (!take(ms)) { go = false; break; } }
+      if (!go) break;
+    }
+    return out;
+  }
+  function parseIcs(text, feed, from, to) {
+    const lines = icsUnfold(text);
+    const raw = [];
+    let cur = null, depth = 0;
+    for (const line of lines) {
+      if (line === "BEGIN:VEVENT") { cur = { props: {}, exdates: [] }; depth = 0; continue; }
+      if (!cur) continue;
+      if (/^BEGIN:/.test(line)) { depth++; continue; }      // VALARM etc.
+      if (/^END:/.test(line) && line !== "END:VEVENT") { depth--; continue; }
+      if (line === "END:VEVENT") { raw.push(cur); cur = null; continue; }
+      if (depth > 0) continue;
+      const p = icsProp(line); if (!p) continue;
+      if (p.name === "EXDATE") p.value.split(",").forEach(v => { const t = icsTime({ value: v, params: p.params }); if (t) cur.exdates.push(t.ms); });
+      else if (!cur.props[p.name]) cur.props[p.name] = p;
+    }
+    const overrides = new Map();     // uid -> Set of replaced starts
+    raw.forEach(e => { if (e.props["RECURRENCE-ID"]) { const t = icsTime(e.props["RECURRENCE-ID"]); const uidv = (e.props.UID || {}).value; if (t && uidv) { if (!overrides.has(uidv)) overrides.set(uidv, new Set()); overrides.get(uidv).add(t.ms); } } });
+    const out = [];
+    raw.forEach(e => {
+      const P = e.props;
+      const uidv = (P.UID || {}).value || "";
+      if (/@ioplanner$/.test(uidv)) return;                                  // our own events, already in the diary
+      if (P.STATUS && /CANCELLED/i.test(P.STATUS.value)) return;
+      const st = icsTime(P.DTSTART); if (!st) return;
+      let en = icsTime(P.DTEND);
+      if (!en && P.DURATION) {
+        const m = /P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?/.exec(P.DURATION.value) || [];
+        en = { ms: st.ms + ((+m[1] || 0) * 7 * 864e5) + ((+m[2] || 0) * 864e5) + ((+m[3] || 0) * 36e5) + ((+m[4] || 0) * 6e4), allDay: st.allDay };
+      }
+      if (!en) en = { ms: st.ms + (st.allDay ? 864e5 : 0), allDay: st.allDay };
+      const len = Math.max(0, en.ms - st.ms);
+      const starts = P.RRULE && !P["RECURRENCE-ID"] ? icsExpand(st.ms, P.RRULE.value, from - len, to) : [st.ms];
+      const skip = new Set(e.exdates.map(x => new Date(x).toDateString() + (st.allDay ? "" : new Date(x).toTimeString().slice(0, 5))));
+      const replaced = !P["RECURRENCE-ID"] && overrides.get(uidv);
+      starts.forEach(ms => {
+        if (ms + len < from || ms > to) return;
+        const k = new Date(ms).toDateString() + (st.allDay ? "" : new Date(ms).toTimeString().slice(0, 5));
+        if (skip.has(k)) return;
+        if (replaced && replaced.has(ms)) return;
+        const a = new Date(ms), b = new Date(ms + len);
+        const lastDay = st.allDay ? iso(new Date(b.getFullYear(), b.getMonth(), b.getDate() - 1)) : iso(len > 0 && b.getHours() === 0 && b.getMinutes() === 0 ? new Date(ms + len - 1) : b);
+        out.push({
+          key: feed.id + "|" + uidv + "|" + ms, feed: feed.id, color: feed.color, cal: feed.name,
+          title: icsUnescape((P.SUMMARY || {}).value || "(bez názvu)"),
+          location: icsUnescape((P.LOCATION || {}).value || ""), desc: icsUnescape((P.DESCRIPTION || {}).value || ""),
+          allDay: st.allDay, date: iso(a), endDate: lastDay < iso(a) ? iso(a) : lastDay,
+          time: st.allDay ? "" : pad(a.getHours()) + ":" + pad(a.getMinutes()),
+          end: st.allDay ? "" : pad(b.getHours()) + ":" + pad(b.getMinutes()), ms,
+        });
+      });
+    });
+    return out.sort((x, y) => x.ms - y.ms);
+  }
+
+  // feeds the person added, kept in their account so every device sees them
+  state.feeds = [];
+  state.ext = [];            // occurrences from those calendars
+  let extErr = new Map();    // feed id -> message
+  let extLoading = false;
+  const FEED_COLORS = ["#e0533d", "#2b8553", "#8a4fd8", "#d08a00", "#1d8fb3", "#c43b86"];
+  function feedsFromUser(user) {
+    const f = user && user.user_metadata && Array.isArray(user.user_metadata.icsFeeds) ? user.user_metadata.icsFeeds : [];
+    return f.filter(x => x && x.id && x.url).map(x => ({ id: x.id, name: x.name || "Kalendár", url: x.url, color: x.color || FEED_COLORS[0], on: x.on !== false }));
+  }
+  async function saveFeeds(list) {
+    const { error } = await sb.auth.updateUser({ data: { icsFeeds: list } });
+    if (error) throw "Nastavenie sa nepodarilo uložiť: " + (error.message || "");
+    state.feeds = list;
+  }
+  function extOn(ds) {
+    return state.ext.filter(o => o.date <= ds && o.endDate >= ds && (state.feeds.find(f => f.id === o.feed) || {}).on !== false)
+      .sort((a, b) => (a.date < ds ? "" : (a.time || "")).localeCompare(b.date < ds ? "" : (b.time || "")));
+  }
+  function extLabel(o, ds) {
+    if (o.allDay) return "celý deň";
+    if (o.date === o.endDate) return o.time + "–" + o.end;
+    if (ds === o.date) return o.time + " →";
+    if (ds === o.endDate) return "→ " + o.end;
+    return "↔";
+  }
+  async function fetchFeed(f) {
+    const { data } = await sb.auth.getSession();
+    const tok = data && data.session ? data.session.access_token : "";
+    const r = await fetch(SUPABASE_URL + "/functions/v1/" + FEED_FUNCTION + "?proxy=" + encodeURIComponent(f.url), {
+      headers: { Authorization: "Bearer " + tok, apikey: SUPABASE_KEY } });
+    const body = await r.text();
+    if (!r.ok) throw (r.status === 404 && /not found/i.test(body)) ? "Funkcia v Supabase nie je aktualizovaná (pozri návod)." : (body.slice(0, 160) || ("Chyba " + r.status));
+    return body;
+  }
+  async function loadExternal() {
+    if (!sb || !uid || extLoading) return;
+    const list = state.feeds.filter(f => f.on);
+    if (!list.length) { state.ext = []; if (!modalOpen()) render(); return; }
+    extLoading = true;
+    const t0 = new Date(); const from = new Date(t0.getFullYear(), t0.getMonth() - 4, 1).getTime(), to = new Date(t0.getFullYear() + 1, t0.getMonth() + 2, 0).getTime();
+    const out = [];
+    await Promise.all(list.map(async f => {
+      try { out.push(...parseIcs(await fetchFeed(f), f, from, to)); extErr.delete(f.id); }
+      catch (e) {
+        extErr.set(f.id, typeof e === "string" ? e : "Kalendár sa nepodarilo načítať.");
+        out.push(...state.ext.filter(o => o.feed === f.id));       // keep what we had
+      }
+    }));
+    state.ext = out;
+    try { localStorage.setItem("diar.extcache." + uid, JSON.stringify(out)); } catch (e) {}
+    extLoading = false;
+    if (!modalOpen()) render();
+  }
+  function extChip(o, ds) {
+    return h("span", { class: "chip ext", style: "border-left-color:" + o.color, title: o.cal + ": " + o.title,
+      onclick: e => { e.stopPropagation(); openExt(o); } },
+      h("b", { text: o.allDay ? "" : (ds === o.date ? o.time : "") }), o.title);
+  }
+  function extCard(o, ds) {
+    return h("button", { class: "card ext", type: "button", style: "border-left-color:" + o.color, onclick: () => openExt(o) },
+      h("span", { class: "t", text: extLabel(o, ds) }),
+      h("span", { class: "ttl", text: o.title }),
+      h("span", { class: "meta" }, h("span", { class: "cal-tag" }, h("i", { style: "background:" + o.color }), o.cal), o.location ? h("span", { text: o.location }) : null));
+  }
+  function openExt(o) {
+    const root = document.getElementById("modal-root");
+    const when = o.allDay
+      ? (o.date === o.endDate ? fmtDay(o.date) + " · celý deň" : fmtDay(o.date) + " – " + fmtDay(o.endDate))
+      : (o.date === o.endDate ? fmtDay(o.date) + " · " + o.time + "–" + o.end : fmtDay(o.date) + " " + o.time + " – " + fmtDay(o.endDate) + " " + o.end);
+    const modal = h("div", { class: "modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "x-h" },
+      h("span", { class: "cal-tag" }, h("i", { style: "background:" + o.color }), "Kalendár Apple · " + o.cal),
+      h("h2", { id: "x-h", text: o.title }),
+      h("p", { text: when.replace(/^./, m => m.toUpperCase()) }),
+      o.location ? h("p", { class: "hint", text: "Miesto: " + o.location }) : null,
+      o.desc ? h("p", { class: "note-body", text: o.desc }) : null,
+      h("p", { class: "hint", text: "Táto udalosť je z Kalendára Apple, upravuješ ju tam. Ak z nej chceš mať akciu v diári (so mzdou, prílohami…), vytvor ju tlačidlom nižšie." }),
+      h("div", { class: "modal-foot" }, h("span", { class: "spacer" }),
+        h("button", { class: "ghost", type: "button", onclick: () => close(), text: "Zavrieť" }),
+        h("button", { class: "primary", type: "button", onclick: () => { close(); openEditor(null, o.date, {
+          title: o.title, time: o.time, end: o.end, endDate: o.endDate !== o.date ? o.endDate : "",
+          notes: [o.location ? "Miesto: " + o.location : "", o.desc].filter(Boolean).join("\n") }); }, text: "Vytvoriť akciu v diári" })));
+    const overlay = h("div", { class: "overlay", onclick: e => { if (e.target === overlay) close(); } }, modal);
+    function onKey(e) { if (e.key === "Escape") close(); }
+    function close() { document.removeEventListener("keydown", onKey); root.replaceChildren(); render(); }
+    document.addEventListener("keydown", onKey);
+    root.replaceChildren(overlay);
+  }
+  // settings section inside the "Kalendár Apple" window
+  function feedSettings() {
+    const box = h("div", { class: "feed-import" });
+    function draw() {
+      const list = state.feeds;
+      const rows = list.map((f, i) => {
+        const on = h("input", { type: "checkbox", id: "fi-on-" + i, "aria-label": "Zobrazovať " + f.name }); on.checked = f.on;
+        on.addEventListener("change", async () => { const next = list.map(x => x.id === f.id ? { ...x, on: on.checked } : x); try { await saveFeeds(next); draw(); loadExternal().then(draw); } catch (m) { toast(m); } });
+        const color = h("input", { type: "color", id: "fi-color-" + i, value: f.color, "aria-label": "Farba" });
+        color.addEventListener("change", async () => { const next = list.map(x => x.id === f.id ? { ...x, color: color.value } : x); try { await saveFeeds(next); state.ext.forEach(o => { if (o.feed === f.id) o.color = color.value; }); draw(); } catch (m) { toast(m); } });
+        let armed = false;
+        const del = h("button", { class: "danger", type: "button", text: "Odobrať", onclick: async () => {
+          if (!armed) { armed = true; del.classList.add("armed"); del.textContent = "Naozaj?"; return; }
+          try { await saveFeeds(list.filter(x => x.id !== f.id)); state.ext = state.ext.filter(o => o.feed !== f.id); draw(); } catch (m) { toast(m); }
+        } });
+        return h("div", { class: "fi-row" }, on, color, h("label", { for: on.id, class: "fi-name" }, h("strong", { text: f.name }),
+          extErr.has(f.id) ? h("span", { class: "err", text: extErr.get(f.id) }) : h("span", { class: "hint", text: state.ext.filter(o => o.feed === f.id).length + " udalostí načítaných" })), del);
+      });
+      const name = h("input", { id: "fi-name", type: "text", placeholder: "Názov, napr. Rodina", maxlength: "60" });
+      const url = h("input", { id: "fi-url", type: "url", placeholder: "webcal://p…-caldav.icloud.com/published/2/…", inputmode: "url" });
+      const err = h("p", { class: "err", hidden: true });
+      const add = h("button", { class: "primary", type: "button", text: "Pridať kalendár", onclick: async () => {
+        const u = url.value.trim();
+        if (!/^(webcals?|https?):\/\//i.test(u)) { err.textContent = "Vlož adresu verejného kalendára (začína webcal:// alebo https://)."; err.hidden = false; return; }
+        add.disabled = true; add.textContent = "Overujem…"; err.hidden = true;
+        const f = { id: newId(), name: name.value.trim() || "Kalendár Apple", url: u, color: FEED_COLORS[list.length % FEED_COLORS.length], on: true };
+        try {
+          const n = parseIcs(await fetchFeed(f), f, Date.now() - 864e5 * 120, Date.now() + 864e5 * 400).length;
+          await saveFeeds(list.concat([f]));
+          toast("Kalendár pridaný · " + n + " udalostí"); draw(); loadExternal().then(draw);
+        } catch (m) { err.textContent = typeof m === "string" ? m : "Kalendár sa nepodarilo načítať."; err.hidden = false; add.disabled = false; add.textContent = "Pridať kalendár"; }
+      } });
+      box.replaceChildren(
+        h("h3", { text: "Kalendár Apple v diári" }),
+        h("p", { class: "hint", text: "Udalosti z tvojich kalendárov v iCloude sa zobrazia v mesiaci aj týždni vo svojej farbe. Len na čítanie, obnovujú sa pri každom otvorení diára." }),
+        ...rows,
+        h("div", { class: "fi-add" }, name, url, add), err,
+        h("ol", { class: "steps" },
+          h("li", {}, h("b", { text: "Mac: " }), "Kalendár → vľavo pravým tlačidlom na kalendár → Zdieľať kalendár… → zaškrtni Verejný kalendár → skopíruj adresu."),
+          h("li", {}, h("b", { text: "iPhone: " }), "Kalendár → Kalendáre → (i) pri kalendári → zapni Verejný kalendár → Zdieľať odkaz → Kopírovať."),
+          h("li", {}, "Adresu vlož sem a klikni Pridať kalendár. Takto pridaj každý kalendár, ktorý chceš vidieť.")));
+    }
+    draw();
+    return box;
   }
 
   // ---------- Notes (free notes and checklists, not tied to an event) ----------
@@ -1600,12 +1911,13 @@ main { padding-bottom: 40px; }
   }
 
   // ---------- Editor ----------
-  function openEditor(id, dateStr) {
+  function openEditor(id, dateStr, prefill) {
     editingEventId = id || null;
     if (readOnly) { toast("Tento diár môžeš len prezerať."); }
     const src = id ? state.events.get(id) : null;
     const draft = src ? JSON.parse(JSON.stringify(src)) : {
       title: "", date: dateStr || state.selected || todayIso(), time: "", end: "", status: "todo", notes: "", checklist: [],
+      ...(prefill || {}),
     };
     draft.checklist = draft.checklist || [];
     draft.attachments = draft.attachments || [];
@@ -2127,6 +2439,7 @@ main { padding-bottom: 40px; }
       h("h2", { id: "feed-title", text: "Kalendár na iPhone a Macu" }),
       h("p", { class: "feed-lead", text: "Akcie z diára sa zobrazia v aplikácii Kalendár ako samostatný kalendár „Osobný diár“. Nové, upravené aj vymazané akcie sa prejavia samy, zvyčajne do 15 – 60 minút. Upravuješ ich tu v diári." }),
       body, err,
+      feedSettings(),
       h("div", { class: "modal-foot" }, h("span", { class: "spacer" }), h("button", { class: "ghost", type: "button", onclick: () => close(), text: "Zavrieť" })),
     );
     const overlay = h("div", { class: "overlay", onclick: e => { if (e.target === overlay) close(); } }, modal);
@@ -2297,6 +2610,9 @@ main { padding-bottom: 40px; }
     }
     state.gate = false;
     authBtn.hidden = false; calBtn.hidden = false; authBtn.title = user.email || "";
+    state.feeds = feedsFromUser(user);
+    try { state.ext = JSON.parse(localStorage.getItem("diar.extcache." + uid) || "[]"); } catch (e) { state.ext = []; }
+    setTimeout(loadExternal, 400);
     // show the last known events right away, then refresh from the database
     try {
       const cached = JSON.parse(localStorage.getItem("diar.cache." + uid) || "[]");
@@ -2321,7 +2637,12 @@ main { padding-bottom: 40px; }
   });
 
   // pick up changes made on other devices when the app comes back to the foreground
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) scheduleLoad(); });
+  let extAt = Date.now();
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) return;
+    scheduleLoad();
+    if (Date.now() - extAt > 10 * 60e3) { extAt = Date.now(); loadExternal(); }   // Apple calendars at most every 10 minutes
+  });
   window.addEventListener("online", scheduleLoad);
 })();
 </script>
