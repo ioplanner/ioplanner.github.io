@@ -1414,8 +1414,14 @@ main { padding-bottom: 40px; }
   async function fetchFeed(f) {
     const { data } = await sb.auth.getSession();
     const tok = data && data.session ? data.session.access_token : "";
-    const r = await fetch(SUPABASE_URL + "/functions/v1/" + FEED_FUNCTION + "?proxy=" + encodeURIComponent(f.url), {
-      headers: { Authorization: "Bearer " + tok, apikey: SUPABASE_KEY } });
+    let r;
+    try {
+      r = await fetch(SUPABASE_URL + "/functions/v1/" + FEED_FUNCTION + "?proxy=" + encodeURIComponent(f.url), {
+        headers: { Authorization: "Bearer " + tok, apikey: SUPABASE_KEY } });
+    } catch (e) {
+      // the browser blocks the reply when the function in Supabase still has the old code (no permission for the diary page)
+      throw navigator.onLine === false ? "Si offline." : "Funkcia " + FEED_FUNCTION + " v Supabase ešte nemá nový kód. Vlož do nej aktuálny kód a klikni Deploy (pozri návod).";
+    }
     const body = await r.text();
     if (!r.ok) throw (r.status === 404 && /not found/i.test(body)) ? "Funkcia v Supabase nie je aktualizovaná (pozri návod)." : (body.slice(0, 160) || ("Chyba " + r.status));
     return body;
