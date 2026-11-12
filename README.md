@@ -105,6 +105,8 @@ Akcie z diára sa dajú odoberať v aplikácii Kalendár na iPhone, iPade a Macu
 
 Adresu nikomu neposielaj. Ak ju niekto získa, v diári klikni **Vytvoriť novú adresu**, stará prestane fungovať.
 
+**Farba diára:** v okne **Kalendár Apple** → *Farba diára* vyberieš farbu svojich akcií v diári (alebo vlastnú). Platí na všetkých zariadeniach. Farbu kalendára „Osobný diár“ v Kalendári Apple zmeníš priamo tam: Mac – pravým tlačidlom na kalendár → farba; iPhone – *Kalendáre* → (i) → *Farba*.
+
 ### Opačný smer: Kalendár Apple v diári
 
 Udalosti z tvojich kalendárov v iCloude sa môžu zobrazovať aj priamo v diári (mesiac, týždeň, deň), vo vlastnej farbe a len na čítanie.

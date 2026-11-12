@@ -97,6 +97,10 @@ header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; b
 .chip { display: block; min-width: 0; font-size: .76rem; padding: 2px 6px; border-radius: 5px; background: var(--surface-2); border-left: 3px solid var(--todo); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chip[data-s="doing"] { border-left-color: var(--doing); }
 .chip[data-s="done"] { border-left-color: var(--done); color: var(--muted); text-decoration: line-through; }
+:root[data-diary-color] .chip:not(.ext) { border-left-color: var(--diary); background: color-mix(in srgb, var(--diary) 14%, var(--surface)); }
+:root[data-diary-color] .chip:not(.ext)[data-s="done"] { background: var(--surface-2); }
+:root[data-diary-color] .dots i:not([style]) { background: var(--diary); }
+:root[data-diary-color] .card:not(.ext) { border-left: 4px solid var(--diary); }
 .chip b { font-family: var(--f-mono); font-weight: 500; font-size: .7rem; color: var(--muted); margin-right: 4px; }
 .more { font-size: .72rem; color: var(--muted); padding-left: 4px; }
 .dots { display: none; gap: 3px; flex-wrap: wrap; padding-left: 4px; }
@@ -146,6 +150,12 @@ header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; b
 .card.ext { border-left-width: 4px; border-left-style: solid; background: var(--surface-2); }
 .cal-tag { display: inline-flex; align-items: center; gap: 5px; font-size: .75rem; color: var(--muted); }
 .cal-tag i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.swatches { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sw { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--line); padding: 0; }
+.sw.on { box-shadow: 0 0 0 2px var(--ink); }
+.sw.none { background: var(--surface-2); color: var(--muted); font-size: .9rem; }
+.sw-custom { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--muted); text-transform: none; letter-spacing: normal; font-weight: 400; cursor: pointer; }
+.sw-custom input { width: 30px; height: 30px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: none; }
 .feed-import { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; }
 .feed-import h3 { margin: 0; font-family: var(--f-display); font-size: 1.05rem; }
 .fi-row { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 8px; align-items: center; }
@@ -468,6 +478,7 @@ main { padding-bottom: 40px; }
   };
   try { const v = localStorage.getItem("diar.view"); if (v) state.view = v; } catch (e) {}
   try { const m = localStorage.getItem("diar.boardMode"); if (m === "notes" || m === "events") state.boardMode = m; } catch (e) {}
+  try { const c = localStorage.getItem("diar.color"); if (c && /^#[0-9a-f]{6}$/i.test(c)) { document.documentElement.style.setProperty("--diary", c); document.documentElement.setAttribute("data-diary-color", ""); } } catch (e) {}
   const hashMap = { mesiac: "month", tyzden: "week", nastenka: "board", mzdy: "pay", poznamky: "board" };
   if (hashMap[location.hash.slice(1)]) state.view = hashMap[location.hash.slice(1)];
   if (location.hash === "#poznamky") state.boardMode = "notes";
@@ -1479,6 +1490,42 @@ main { padding-bottom: 40px; }
     document.addEventListener("keydown", onKey);
     root.replaceChildren(overlay);
   }
+  // colour of the diary's own events (like a calendar colour in Apple Calendar)
+  const DIARY_COLORS = ["#2547c4", "#e0533d", "#2b8553", "#8a4fd8", "#d08a00", "#1d8fb3", "#c43b86", "#5b6878"];
+  function applyDiaryColor(c) {
+    const root = document.documentElement;
+    if (c && /^#[0-9a-f]{6}$/i.test(c)) { root.style.setProperty("--diary", c); root.setAttribute("data-diary-color", ""); }
+    else { root.style.removeProperty("--diary"); root.removeAttribute("data-diary-color"); }
+    state.diaryColor = c || "";
+  }
+  async function saveDiaryColor(c) {
+    applyDiaryColor(c);
+    try { localStorage.setItem("diar.color", c || ""); } catch (e) {}
+    if (sb && uid) { const { error } = await sb.auth.updateUser({ data: { diaryColor: c || "" } }); if (error) throw "Farbu sa nepodarilo uložiť: " + (error.message || ""); }
+  }
+  function diaryColorSettings() {
+    const box = h("div", { class: "feed-import" });
+    function draw() {
+      const cur = state.diaryColor || "";
+      const custom = h("input", { type: "color", id: "dc-custom", value: cur || "#2547c4", "aria-label": "Vlastná farba" });
+      custom.addEventListener("change", async () => { try { await saveDiaryColor(custom.value); draw(); render(); } catch (m) { toast(m); } });
+      box.replaceChildren(
+        h("h3", { text: "Farba diára" }),
+        h("p", { class: "hint", text: "Farba tvojich akcií v diári, aby sa dali odlíšiť od kalendárov z Apple. V Kalendári Apple si farbu „Osobného diára“ nastavíš priamo tam (postup nižšie)." }),
+        h("div", { class: "swatches", role: "group", "aria-label": "Farba diára" },
+          h("button", { type: "button", class: "sw none" + (!cur ? " on" : ""), title: "Podľa stavu (bez farby)", "aria-pressed": String(!cur),
+            onclick: async () => { try { await saveDiaryColor(""); draw(); render(); } catch (m) { toast(m); } }, text: "∅" }),
+          ...DIARY_COLORS.map(c => h("button", { type: "button", class: "sw" + (cur.toLowerCase() === c ? " on" : ""), style: "background:" + c, title: c, "aria-label": "Farba " + c, "aria-pressed": String(cur.toLowerCase() === c),
+            onclick: async () => { try { await saveDiaryColor(c); draw(); render(); } catch (m) { toast(m); } } })),
+          h("label", { class: "sw-custom", for: "dc-custom", title: "Vlastná farba" }, custom, "vlastná")),
+        h("ol", { class: "steps" },
+          h("li", {}, h("b", { text: "Kalendár Apple na Macu: " }), "vľavo pravým tlačidlom na „Osobný diár“ → vyber farbu (alebo Vlastná farba…)."),
+          h("li", {}, h("b", { text: "iPhone: " }), "Kalendár → Kalendáre → (i) pri „Osobný diár“ → Farba. Cez iCloud sa farba prenesie na všetky zariadenia.")));
+    }
+    draw();
+    return box;
+  }
+
   // settings section inside the "Kalendár Apple" window
   function feedSettings() {
     const box = h("div", { class: "feed-import" });
@@ -2445,6 +2492,7 @@ main { padding-bottom: 40px; }
       h("h2", { id: "feed-title", text: "Kalendár na iPhone a Macu" }),
       h("p", { class: "feed-lead", text: "Akcie z diára sa zobrazia v aplikácii Kalendár ako samostatný kalendár „Osobný diár“. Nové, upravené aj vymazané akcie sa prejavia samy, zvyčajne do 15 – 60 minút. Upravuješ ich tu v diári." }),
       body, err,
+      diaryColorSettings(),
       feedSettings(),
       h("div", { class: "modal-foot" }, h("span", { class: "spacer" }), h("button", { class: "ghost", type: "button", onclick: () => close(), text: "Zavrieť" })),
     );
@@ -2617,6 +2665,7 @@ main { padding-bottom: 40px; }
     state.gate = false;
     authBtn.hidden = false; calBtn.hidden = false; authBtn.title = user.email || "";
     state.feeds = feedsFromUser(user);
+    if (user.user_metadata && typeof user.user_metadata.diaryColor === "string") applyDiaryColor(user.user_metadata.diaryColor);
     try { state.ext = JSON.parse(localStorage.getItem("diar.extcache." + uid) || "[]"); } catch (e) { state.ext = []; }
     setTimeout(loadExternal, 400);
     // show the last known events right away, then refresh from the database
